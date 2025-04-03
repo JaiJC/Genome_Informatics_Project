@@ -8,11 +8,16 @@ date: "2025-04-02"
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## R Markdown
+## Introduction
+We chose the study “Experimental Evolution Reveals Unifying Systems-Level Adaptations but Diversity Driving Genotypes” to investigate for our course project. The study investigates the evolution of six strains of Escherichia Coli subjected to adaptive laboratory evolution (ALE). The aim of this study was to characterize genotype-fitness maps of evolution for system-level properties, including metabolic and transcriptional regulatory networks. The authors took a multi-omic approach by studying the correlation between gene expression, gene mutation and metabolic flux. The goal was to uncover systems-level adaptations and identify consistent mutational patterns across a diverse genetic background. 
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+Our reanalysis will focus on processing the raw sequencing data from this study to confirm the reproducibility and robustness of the authors’ methodology. We chose this specific study due to its comprehensive coverage of core concepts in genomic data analysis, as well as the large amount of publicly available sequencing data. WE WILL IMPROVE AND LOOK FOR OVERSIGHTS. Our analysis will include quality control, genome indexing and paired end alignment using automated pipelines and workflows. 
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+Potential oversights:
+
+No automated pipeline?
+No mention of quality control?
+No report of alignment stats?
 
 ```{r cars}
 summary(cars)
