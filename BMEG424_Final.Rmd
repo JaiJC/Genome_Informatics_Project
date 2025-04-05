@@ -19,3 +19,109 @@ No automated pipeline?
 No mention of quality control?
 No report of alignment stats?
 
+## Quality Control for Fastq Files
+
+## Alignment 
+
+The paper aligned all reads to their respective genome using Bowtie v1.1.2 (Langmead et al., 2009) with the following flags: -m 1 --best --strata." Bowtie is an older, ultra-fast aligner for short reads, however it is not splice aware and doesn't allow for gaps (no insertions/deletions). The flags that were used discards reads that map to more than one location and ensure the best alignment is selected. This setup appears to be chosen based on emphasizing specificity versus sensitivity. 
+
+We chose to use BWA, which is a more modern aligner which offers better handling of mismatches and works well with longer reads. We attempted to simulate their results using this aligner by filtering out uniquely mapped reads. 
+
+is the data longer or noisier gotta check
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+reference_map = {
+    "SRR12170043": "NC_007779.1",
+    "SRR12170044": "NC_007779.1",
+    "SRR12170045": "NC_007779.1",
+    "SRR12170046": "NC_007779.1",
+    "SRR12170047": "NC_007779.1",
+    "SRR12170048": "NC_007779.1",
+    "SRR12170049": "NC_007779.1",
+    "SRR12170050": "NC_000913.3",
+    "SRR12170051": "NC_000913.3",
+    "SRR12170052": "NC_000913.3",
+    "SRR12170053": "NC_012971.2",
+    "SRR12170054": "NC_000913.3",
+    "SRR12170055": "NC_000913.3",
+    "SRR12170056": "NC_000913.3",
+    "SRR12170057": "NC_007779.1",
+    "SRR12170058": "NC_000913.3",
+    "SRR12170059": "NC_000913.3",
+    "SRR12170060": "NC_000913.3",
+    "SRR12170061": "NC_000913.3",
+    "SRR12170062": "NC_000913.3",
+    "SRR12170063": "NC_010468.1",
+    "SRR12170064": "NC_012971.2",
+    "SRR12170065": "NC_010468.1",
+    "SRR12170066": "NC_010468.1",
+    "SRR12170071": "NC_007779.1",
+    "SRR12170072": "NC_007779.1",
+    "SRR12170075": "NC_012971.2",
+    "SRR12170076": "NC_012971.2"
+}
+
+rule all:
+    input:
+        expand("aligned/{sample}.unique.sorted.bam", sample=reference_map.keys())
+
+rule download_sra:
+    output:
+        "sra/{sample}.sra"
+    shell:
+        "prefetch {wildcards.sample} -O sra"
+
+rule sra_to_fastq:
+    input:
+        "sra/{sample}.sra"
+    output:
+        r1="data/{sample}_1.fastq.gz",
+        r2="data/{sample}_2.fastq.gz"
+    shell:
+        "fastq-dump --split-files --gzip --outdir data {input}"
+
+rule index_ref:
+    input:
+        "ref_genomes/{ref}.fna"
+    output:
+        "ref_genomes/{ref}.fna.bwt"
+    shell:
+        "bwa index {input}"
+
+rule align:
+    input:
+        r1="data/{sample}_1.fastq.gz",
+        r2="data/{sample}_2.fastq.gz",
+        ref=lambda wildcards: f"ref_genomes/{reference_map[wildcards.sample]}.fna",
+        idx=lambda wildcards: f"ref_genomes/{reference_map[wildcards.sample]}.fna.bwt"
+    output:
+        "aligned/{sample}.sam"
+    shell:
+        "bwa mem {input.ref} {input.r1} {input.r2} > {output}"
+
+rule sam_to_bam:
+    input:
+        "aligned/{sample}.sam"
+    output:
+        "aligned/{sample}.bam"
+    shell:
+        "samtools view -bS {input} > {output}"
+
+rule filter_unique:
+    input:
+        "aligned/{sample}.bam"
+    output:
+        "aligned/{sample}.unique.bam"
+    shell:
+        "samtools view -b -q 1 {input} > {output}"
+
+rule sort_bam:
+    input:
+        "aligned/{sample}.unique.bam"
+    output:
+        "aligned/{sample}.unique.sorted.bam"
+    shell:
+        "samtools sort -o {output} {input}"
+
+```
