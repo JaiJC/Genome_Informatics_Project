@@ -353,6 +353,68 @@ write.table(res_df,
             row.names = TRUE)
 
 ```
+## DeSeq Results
+
+# IModulon 
+
+iModulons (independently modulated gene sets) are groups of co-regulated genes identified using Independent Component Analysis (ICA) and are applied to large transcriptomic datasets. Each iModulon corresponds to a specific transcription factor, stress response, or functional module in the cell. In this analysis, we projected our rlog-normalized expression data onto the PRECISE-1K iModulon matrix, which represents over 100 independently regulated gene modules in E. coli MG1655. This allowed us to quantify iModulon activity in each sample, providing insight into underlying regulatory programs that differentiate wild-type and evolved strains. Comparing these activities enables us to identify key transcriptional regulators involved in adaptive evolution and discover patterns not captured by gene-level differential expression alone.
+
+While the original study relied on the PRECISE-278 iModulon set, we evaluated whether using more recent ICA decompositions such as PRECISE-1K could improve the sensitivity of regulatory analysis. These larger sets incorporate more conditions and may offer better resolution for iModulons active under adaptive evolution. They were published after the paper so they were not able to be used previously. 
+
+PRECISE-1K has 1035 samples, where PRECISE-278 only as 278. We hope this will be an improvement in this analysis.
+
+```{r}
+library(tidyverse)
+library(pheatmap)
+
+# Requires dds to run first
+rld <- rlog(dds, blind = FALSE)
+expr <- assay(rld)  # genes x samples
+
+M <- read.csv("M.csv", row.names = 1, check.names = FALSE)
+
+# Match genes between M and rlog matrix 
+common_genes <- intersect(rownames(M), rownames(expr))
+expr_sub <- expr[common_genes, ]
+M_sub    <- M[common_genes, ]
+
+#project expression onto imodulons
+A_projected <- t(as.matrix(M_sub)) %*% as.matrix(expr_sub)
+
+# Heatmap
+pheatmap(A_projected,
+         scale = "row",
+         main = "iModulon Activities (Projected from rlog Expression)",
+         show_colnames = TRUE)
+# Boxplot
+# Get condition info from your metadata
+sample_info$SampleID <- rownames(sample_info)
+A_df <- as.data.frame(t(A_projected))  # samples x iModulons
+A_df$condition <- sample_info$condition
+
+A_long <- A_df %>%
+  pivot_longer(-condition, names_to = "iModulon", values_to = "activity")
+
+ggplot(A_long, aes(x = condition, y = activity)) +
+  geom_boxplot() +
+  facet_wrap(~iModulon, scales = "free_y") +
+  theme_minimal()
+
+
+```
+```{r}
+```
+```{r}
+```
+```{r}
+```
+
+# Results
+
+
+# Metabolic Flux Profiles in Wild-Type vs Evolved Strains
+
+To investigate how gene expression changes translate into functional cellular behavior, we analyzed the predicted metabolic fluxes from the original study’s fluxomics data. These fluxes estimate the activity of central metabolic reactions under wild-type and evolved conditions, this helps to connect the transcriptional regulation to phenotypic outcomes. The flux values were computed in the original study using a constraint-based modeling approach (genome-scale metabolic modeling with gene expression integration). In our analysis, we reused the authors’ flux output and compared relative flux distributions across samples to identify shifts in energy production, carbon usage, and regulatory responses. Our approach mirrors the paper's methodology but adds automated processing and visualization for better reproducibility and easier integration with gene expression and iModulon activity data. We are setting up this analysis to correleate both flux and IModulons quantitatively, where the paper relied on using qualitative associations.
 
 ```{r}
 library(tidyverse)
@@ -404,3 +466,88 @@ flux_long <- data.frame(reaction = reaction_names, flux_best, stringsAsFactors =
 glimpse(flux_long)
 ```
 
+```{r}
+library(ggplot2)
+
+# Plot all reactions (optional, can be messy if there are too many)
+ggplot(flux_long, aes(x = Stage, y = flux)) +
+  geom_boxplot() +
+  facet_wrap(~reaction, scales = "free_y") +
+  theme_minimal() +
+  labs(title = "Flux Distributions for Each Reaction",
+       y = "Predicted Flux", x = "Stage")
+
+flux_summary <- flux_long %>%
+  group_by(reaction, Stage) %>%
+  summarise(mean_flux = mean(flux, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(names_from = Stage, values_from = mean_flux) %>%
+  mutate(diff = EP - WT) %>%
+  arrange(desc(abs(diff)))
+
+head(flux_summary, 10)  # Top 10 reactions with largest difference
+
+top_reactions <- flux_summary$reaction[1:6]  # adjust number as needed
+
+ggplot(filter(flux_long, reaction %in% top_reactions), aes(x = Stage, y = flux)) +
+  geom_boxplot() +
+  facet_wrap(~reaction, scales = "free_y") +
+  theme_minimal() +
+  labs(title = "Top Differential Flux Reactions",
+       y = "Flux", x = "Stage")
+
+```
+Once you see the top flux changes, ask:
+
+Do these reactions relate to energy production (glycolysis, TCA, oxidative phosphorylation)?
+
+Do they involve known regulators like Crp, Fnr, or ArcA?
+
+Are they consistent with the iModulons or DEGs you've seen (once available)?
+
+This is where you’ll tie metabolic changes to gene expression and to the paper’s main conclusions.
+
+## Integrated Multi-Omics Analysis
+# Linking Transcriptional Regulation to Metabolic Phenotypes
+
+```{r}
+library(broom)
+
+A_long <- as.data.frame(t(A_projected))  # samples x iModulons
+A_long$SampleID <- rownames(A_long)
+
+A_long_tidy <- A_long %>%
+  pivot_longer(-SampleID, names_to = "iModulon", values_to = "activity")
+
+flux_joined <- flux_long %>%
+  inner_join(A_long_tidy, by = "SampleID")
+
+cor_results <- flux_joined %>%
+  group_by(reaction, iModulon) %>%
+  summarise(
+    cor_test = list(cor.test(flux, activity, use = "complete.obs")),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    estimate = map_dbl(cor_test, "estimate"),
+    p.value  = map_dbl(cor_test, "p.value")
+  ) %>%
+  arrange(p.value)
+
+# View top correlations
+head(cor_results, 10)
+
+# Filter significant correlations
+sig_cor <- cor_results %>% filter(p.value < 0.05, abs(estimate) > 0.5)
+
+# Visualize top pair
+top_pair <- sig_cor[1, ]
+flux_joined %>%
+  filter(reaction == top_pair$reaction, iModulon == top_pair$iModulon) %>%
+  ggplot(aes(x = activity, y = flux)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  labs(title = paste("Correlation: ", top_pair$iModulon, "vs", top_pair$reaction),
+       x = "iModulon Activity", y = "Flux")
+
+
+```
