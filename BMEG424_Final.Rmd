@@ -280,12 +280,18 @@ message("Condition levels: ", paste(levels(dds$condition), collapse = ", "))
 message("Results names: ", paste(resultsNames(dds), collapse = ", "))
 
 # 9. Run DESeq with poscounts size‑factor estimation in parallel
-register(MulticoreParam(11))
+register(MulticoreParam(4))
+dds$condition <- relevel(dds$condition, ref = "Wild")  # Wild becomes baseline
 dds <- DESeq(dds, sfType = "poscounts", parallel = TRUE)
+
+```
+
+```{r}
+#load("dds_final.RData")
 
 # 10. Extract results by name (as shown in resultsNames)
 #     Here DESeq2 gave "condition_Wild_vs_Evolved"
-res <- results(dds, name = "condition_Wild_vs_Evolved")
+res <- results(dds, name = "condition_Evolved_vs_Wild")
 res_df <- as.data.frame(res)
 res_df$gene <- rownames(res_df)
 # 11. Filter for significant DEGs
@@ -312,7 +318,7 @@ p_volcano <- ggplot(res_df, aes(x = log2FoldChange, y = negLog10Padj)) +
   geom_vline(xintercept = c(-1, 1),      linetype = "dashed", color = "blue") +
   geom_text_repel(data = topLabels,
                   aes(label = gene),
-                  size = 3, max.overlaps = 10) +
+                  size = 3, max.overlaps = 50) +
   theme_minimal(base_size = 14) +
   labs(title = "Volcano Plot of Differential Expression",
        x     = "Log2 Fold Change",
@@ -352,7 +358,70 @@ write.table(res_df,
             quote     = FALSE,
             row.names = TRUE)
 
+head(sig_res[order(sig_res$padj), ])
+
+
 ```
+The paper was interested in a specific set of genes that they knew mattered from previous evolution experiments or mutation analysis.
+
+These genes included:
+
+Genes mutated frequently across evolved lines (like pykF, zwf)
+
+Genes involved in core cellular processes like translation, stress response, and metabolism
+
+Regulatory genes or transporters known to show adaptive behavior
+
+They then looked at the DESeq2 output for those specific genes to ask:
+
+Are they upregulated in evolved lines?
+
+Do they show consistent expression patterns across replicates?
+
+Are they part of pathways that look coordinated?
+
+The genes of interest are:
+
+#Metabolism / Central Carbon Pathways:
+pykF — pyruvate kinase (glycolysis)
+
+zwf — glucose-6-phosphate dehydrogenase (pentose phosphate pathway)
+
+gnd — 6-phosphogluconate dehydrogenase
+
+tpiA — triose phosphate isomerase
+
+##Stringent Response / Regulatory:
+spoT — ppGpp hydrolase/synthetase
+
+relA — ppGpp synthetase
+
+##Cell Wall / Structural Genes:
+mrdA — penicillin-binding protein 2
+
+mreB — actin-like cytoskeleton
+
+##Global Regulators:
+rpoB — RNA polymerase β subunit
+
+rpoC — RNA polymerase β′ subunit
+
+hns — nucleoid-associated global repressor
+
+fis — nucleoid structuring protein
+
+tdk — thymidine kinase (important in nucleotide metabolism)
+
+## Transporters / Membrane:
+manY / manZ — mannose PTS system
+
+ompF — outer membrane porin F
+
+## Stress / Redox:
+soxR, marR — regulators of oxidative stress and antibiotics
+
+uspA, uspG — universal stress proteins
+
 ## DeSeq Results
 
 # IModulon 
@@ -406,8 +475,7 @@ ggplot(A_long, aes(x = condition, y = activity)) +
 ```
 ```{r}
 ```
-```{r}
-```
+
 
 # Results
 
