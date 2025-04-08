@@ -1,22 +1,38 @@
----
-title: "BMEG424_Final Project"
-output:
-  github_document:
-    toc: true
-    toc_depth: 4
-editor_options: 
-  markdown: 
-    wrap: 72
----
+BMEG424_Final Project
+================
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
+- [Introduction](#introduction)
+- [Data processing](#data-processing)
+- [Alignment](#alignment)
+- [Quality Control Summary](#quality-control-summary)
+  - [Gene Quantification & Differential Expression
+    Analysis](#gene-quantification--differential-expression-analysis)
+  - [Differential Expression
+    Analysis](#differential-expression-analysis)
+- [DeSeq Results](#deseq-results)
+  - [Analysis of Evolved E. coli
+    Strains](#analysis-of-evolved-e-coli-strains)
+    - [Midpoint (Evolved_Mid) Data The mid-stage evolution analysis
+      revealed](#midpoint-evolved_mid-data-the-mid-stage-evolution-analysis-revealed)
+    - [Key genes:](#key-genes)
+  - [Endpoint (Evolved_Endpoint) Data The endpoint analysis
+    demonstrated](#endpoint-evolved_endpoint-data-the-endpoint-analysis-demonstrated)
+    - [Key genes:](#key-genes-1)
+  - [Comparison to Original Paper](#comparison-to-original-paper)
+    - [Differences:](#differences)
+    - [Biological Implications](#biological-implications)
+  - [DeSeq Results](#deseq-results-1)
+- [iModulon](#imodulon)
+- [Results](#results)
+- [Metabolic Flux Profiles in Wild-Type vs Evolved
+  Strains](#metabolic-flux-profiles-in-wild-type-vs-evolved-strains)
+- [Conclusion](#conclusion)
+- [References](#references)
 
 ## Introduction
 
-The study "Experimental Evolution Reveals Unifying Systems-Level
-Adaptations but Diversity in Driving Genotypes" investigates the
+The study “Experimental Evolution Reveals Unifying Systems-Level
+Adaptations but Diversity in Driving Genotypes” investigates the
 adaptive evolution of six distinct Escherichia coli strains subjected to
 adaptive laboratory evolution (ALE). This research employed a multi-omic
 approach—integrating whole-genome sequencing, RNA-seq transcriptomics,
@@ -47,128 +63,125 @@ comprehensive experimental design of the original study, combined with
 its integration of mult-iomic data, offers a robust platform for testing
 updated, automated data processing workflows. By improving upon the
 established methodology, this reanalysis not only aims to confirm the
-study's findings but also to provide refined strategies for future
+study’s findings but also to provide refined strategies for future
 research into microbial evolution.
 
 ## Data processing
 
-```
-knitr::opts_chunk$set(echo = False)
-# Snakefile for alignment and counting
+    knitr::opts_chunk$set(echo = False)
+    # Snakefile for alignment and counting
 
-reference_map = {
-    "SRR12170043": "NC_007779.1",
-    "SRR12170044": "NC_007779.1",
-    "SRR12170045": "NC_007779.1",
-    "SRR12170046": "NC_007779.1",
-    "SRR12170047": "NC_007779.1",
-    "SRR12170048": "NC_007779.1",
-    "SRR12170049": "NC_007779.1",
-    "SRR12170050": "NC_000913.3",
-    "SRR12170051": "NC_000913.3",
-    "SRR12170052": "NC_000913.3",
-    "SRR12170053": "NC_012971.2",
-    "SRR12170054": "NC_000913.3",
-    "SRR12170055": "NC_000913.3",
-    "SRR12170056": "NC_000913.3",
-    "SRR12170057": "NC_007779.1",
-    "SRR12170058": "NC_000913.3",
-    "SRR12170059": "NC_000913.3",
-    "SRR12170060": "NC_000913.3",
-    "SRR12170061": "NC_000913.3",
-    "SRR12170062": "NC_000913.3",
-    "SRR12170063": "NC_010468.1",
-    "SRR12170064": "NC_012971.2",
-    "SRR12170065": "NC_010468.1",
-    "SRR12170066": "NC_010468.1",
-    "SRR12170071": "NC_007779.1",
-    "SRR12170072": "NC_007779.1",
-    "SRR12170075": "NC_012971.2",
-    "SRR12170076": "NC_012971.2"
-}
+    reference_map = {
+        "SRR12170043": "NC_007779.1",
+        "SRR12170044": "NC_007779.1",
+        "SRR12170045": "NC_007779.1",
+        "SRR12170046": "NC_007779.1",
+        "SRR12170047": "NC_007779.1",
+        "SRR12170048": "NC_007779.1",
+        "SRR12170049": "NC_007779.1",
+        "SRR12170050": "NC_000913.3",
+        "SRR12170051": "NC_000913.3",
+        "SRR12170052": "NC_000913.3",
+        "SRR12170053": "NC_012971.2",
+        "SRR12170054": "NC_000913.3",
+        "SRR12170055": "NC_000913.3",
+        "SRR12170056": "NC_000913.3",
+        "SRR12170057": "NC_007779.1",
+        "SRR12170058": "NC_000913.3",
+        "SRR12170059": "NC_000913.3",
+        "SRR12170060": "NC_000913.3",
+        "SRR12170061": "NC_000913.3",
+        "SRR12170062": "NC_000913.3",
+        "SRR12170063": "NC_010468.1",
+        "SRR12170064": "NC_012971.2",
+        "SRR12170065": "NC_010468.1",
+        "SRR12170066": "NC_010468.1",
+        "SRR12170071": "NC_007779.1",
+        "SRR12170072": "NC_007779.1",
+        "SRR12170075": "NC_012971.2",
+        "SRR12170076": "NC_012971.2"
+    }
 
-rule all:
-    input:
-        expand("aligned/{sample}.unique.sorted.bam", sample=list(reference_map.keys())),
-        expand("qc/{sample}.flagstat.txt", sample=list(reference_map.keys())),
-        expand("counts/{sample}_counts.txt", sample=list(reference_map.keys()))
+    rule all:
+        input:
+            expand("aligned/{sample}.unique.sorted.bam", sample=list(reference_map.keys())),
+            expand("qc/{sample}.flagstat.txt", sample=list(reference_map.keys())),
+            expand("counts/{sample}_counts.txt", sample=list(reference_map.keys()))
 
-rule download_sra:
-    output:
-        "sra/{sample}.sra"
-    shell:
-        "prefetch {wildcards.sample} -O sra"
+    rule download_sra:
+        output:
+            "sra/{sample}.sra"
+        shell:
+            "prefetch {wildcards.sample} -O sra"
 
-rule sra_to_fastq:
-    input:
-        "sra/{sample}.sra"
-    output:
-        r1="data/{sample}_1.fastq.gz",
-        r2="data/{sample}_2.fastq.gz"
-    shell:
-        "fastq-dump --split-files --gzip --outdir data {input}"
+    rule sra_to_fastq:
+        input:
+            "sra/{sample}.sra"
+        output:
+            r1="data/{sample}_1.fastq.gz",
+            r2="data/{sample}_2.fastq.gz"
+        shell:
+            "fastq-dump --split-files --gzip --outdir data {input}"
 
-rule index_ref:
-    input:
-        "ref_genomes/{ref}.fna"
-    output:
-        expand("ref_genomes/{{ref}}.fna.{ext}", ext=["amb", "ann", "bwt", "pac", "sa"])
-    shell:
-        "bwa index {input}"
+    rule index_ref:
+        input:
+            "ref_genomes/{ref}.fna"
+        output:
+            expand("ref_genomes/{{ref}}.fna.{ext}", ext=["amb", "ann", "bwt", "pac", "sa"])
+        shell:
+            "bwa index {input}"
 
-rule align:
-    input:
-        r1="data/{sample}_1.fastq.gz",
-        r2="data/{sample}_2.fastq.gz",
-        ref=lambda wildcards: f"ref_genomes/{reference_map[wildcards.sample]}.fna",
-        idx=lambda wildcards: f"ref_genomes/{reference_map[wildcards.sample]}.fna.bwt"
-    output:
-        temp("aligned/{sample}.sam")
-    shell:
-        "bwa mem {input.ref} {input.r1} {input.r2} > {output}"
+    rule align:
+        input:
+            r1="data/{sample}_1.fastq.gz",
+            r2="data/{sample}_2.fastq.gz",
+            ref=lambda wildcards: f"ref_genomes/{reference_map[wildcards.sample]}.fna",
+            idx=lambda wildcards: f"ref_genomes/{reference_map[wildcards.sample]}.fna.bwt"
+        output:
+            temp("aligned/{sample}.sam")
+        shell:
+            "bwa mem {input.ref} {input.r1} {input.r2} > {output}"
 
-rule sam_to_bam:
-    input:
-        "aligned/{sample}.sam"
-    output:
-        temp("aligned/{sample}.bam")
-    shell:
-        "samtools view -bS {input} > {output}"
+    rule sam_to_bam:
+        input:
+            "aligned/{sample}.sam"
+        output:
+            temp("aligned/{sample}.bam")
+        shell:
+            "samtools view -bS {input} > {output}"
 
-rule filter_unique:
-    input:
-        "aligned/{sample}.bam"
-    output:
-        temp("aligned/{sample}.unique.bam")
-    shell:
-        "samtools view -b -q 1 {input} > {output}"
+    rule filter_unique:
+        input:
+            "aligned/{sample}.bam"
+        output:
+            temp("aligned/{sample}.unique.bam")
+        shell:
+            "samtools view -b -q 1 {input} > {output}"
 
-rule sort_bam:
-    input:
-        "aligned/{sample}.unique.bam"
-    output:
-        "aligned/{sample}.unique.sorted.bam"
-    shell:
-        "samtools sort -o {output} {input}"
+    rule sort_bam:
+        input:
+            "aligned/{sample}.unique.bam"
+        output:
+            "aligned/{sample}.unique.sorted.bam"
+        shell:
+            "samtools sort -o {output} {input}"
 
-rule flagstat_qc:
-    input:
-        "aligned/{sample}.unique.sorted.bam"
-    output:
-        "qc/{sample}.flagstat.txt"
-    shell:
-        "samtools flagstat {input} > {output}"
+    rule flagstat_qc:
+        input:
+            "aligned/{sample}.unique.sorted.bam"
+        output:
+            "qc/{sample}.flagstat.txt"
+        shell:
+            "samtools flagstat {input} > {output}"
 
-rule count_reads:
-    input:
-        bam="aligned/{sample}.unique.sorted.bam",
-        gff=lambda wildcards: f"ref_genomes/{reference_map[wildcards.sample]}.gff"
-    output:
-        "counts/{sample}_counts.txt"
-    shell:
-        "featureCounts -a {input.gff} -o {output} {input.bam} -T 4 -p -B -C"
-
-```
+    rule count_reads:
+        input:
+            bam="aligned/{sample}.unique.sorted.bam",
+            gff=lambda wildcards: f"ref_genomes/{reference_map[wildcards.sample]}.gff"
+        output:
+            "counts/{sample}_counts.txt"
+        shell:
+            "featureCounts -a {input.gff} -o {output} {input.bam} -T 4 -p -B -C"
 
 Data from the study was downloaded from the NCBI SRA database. The
 paired data was converted to individual fastq files. QC was then
@@ -180,20 +193,20 @@ bp reads, with some having 72 bp (SRR12170056, SRR12170057) or 101 bp
 (SRR12170051, SRR12170052), indicating multiple sequencing runs. GC
 content ranges from 50-53%, with most libraries at 50-51%. Duplication
 levels vary from 25-40% for most samples, with a few showing higher
-duplication (SRR12170059: 83.4%/72.5%, SRR12170071/72: \~70%), while
+duplication (SRR12170059: 83.4%/72.5%, SRR12170071/72: ~70%), while
 SRR12170063 showed lower duplication (22.9%/28.4%). The mean quality
 scores are high (Phred 30+) and consistent between paired samples.
 Per-base sequence content shows balanced nucleotide representation, with
-minimal 'N' bases. Adapter contamination is negligible with less than
-0.1% over represented sequences. All FastQC modules show "green" results,
-indicating high-quality data suitable for downstream analyses.
+minimal ‘N’ bases. Adapter contamination is negligible with less than
+0.1% over represented sequences. All FastQC modules show “green”
+results, indicating high-quality data suitable for downstream analyses.
 
 ## Alignment
 
 The paper aligned all reads to their respective genome using Bowtie
-v1.1.2 (Langmead et al., 2009) with the following flags: -m 1 --best
---strata." Bowtie is an older, ultra-fast aligner for short reads,
-however it is not splice aware and doesn't allow for gaps (no
+v1.1.2 (Langmead et al., 2009) with the following flags: -m 1 –best
+–strata.” Bowtie is an older, ultra-fast aligner for short reads,
+however it is not splice aware and doesn’t allow for gaps (no
 insertions/deletions). The flags that were used discards reads that map
 to more than one location and ensure the best alignment is selected.
 This setup appears to be chosen based on emphasizing specificity versus
@@ -246,15 +259,20 @@ No Cross-Chromosomal Mapping Artifacts: There were 0% reads with mates
 mapped to different chromosomes, showing no signs of contamination or
 major alignment errors.
 
-These results confirm that the pipeline's use of BWA with unique
+These results confirm that the pipeline’s use of BWA with unique
 filtering was appropriate for this dataset. It effectively retained
 high-confidence reads while eliminating ambiguous alignments, which is
 particularly important for downstream analyses like quantification and
-differential expression. The paper and it's data do not contain any
+differential expression. The paper and it’s data do not contain any
 reporting on quality control, comparison on results will have to be seen
 in our next analysis.
 
-![Alignment Multi Quality Control](figures/samtools-flagstat-dp.png)
+<figure>
+<img src="figures/samtools-flagstat-dp.png"
+alt="Alignment Multi Quality Control" />
+<figcaption aria-hidden="true">Alignment Multi Quality
+Control</figcaption>
+</figure>
 
 ## Gene Quantification & Differential Expression Analysis
 
@@ -262,12 +280,12 @@ After generating high-quality, uniquely aligned BAM files for each
 sample, we quantified gene expression using featureCounts. The
 count_reads rule in our Snakemake pipeline was used to automate this
 process for all 28 samples. Each BAM file was paired with the
-corresponding reference genome's annotation file in GFF format, and
+corresponding reference genome’s annotation file in GFF format, and
 featureCounts was used to compute gene-level read counts. The output
 from this step is a set of sample-specific count files (\*\_counts.txt),
 which will be used for differential expression analysis using DESeq2.
 
-```{r}
+``` r
 # 1. Read in each count file (adjust file paths if needed)
 df1 <- read.table("counts/NC_000913.3_counts.txt", header = TRUE, sep = "\t", skip = 1,
                   stringsAsFactors = FALSE, check.names = FALSE)
@@ -315,15 +333,101 @@ colnames(merged_df) <- new_names
 final_matrix <- as.matrix(merged_df)
 
 write.table(final_matrix, file = "final_matrix.txt", sep = "\t", row.names = FALSE, quote = FALSE)
-
-
 ```
 
 ## Differential Expression Analysis
 
-```{r}
+``` r
 # Load libraries
 library(DESeq2)
+```
+
+    ## Loading required package: S4Vectors
+
+    ## Loading required package: stats4
+
+    ## Loading required package: BiocGenerics
+
+    ## 
+    ## Attaching package: 'BiocGenerics'
+
+    ## The following objects are masked from 'package:stats':
+    ## 
+    ##     IQR, mad, sd, var, xtabs
+
+    ## The following objects are masked from 'package:base':
+    ## 
+    ##     anyDuplicated, aperm, append, as.data.frame, basename, cbind,
+    ##     colnames, dirname, do.call, duplicated, eval, evalq, Filter, Find,
+    ##     get, grep, grepl, intersect, is.unsorted, lapply, Map, mapply,
+    ##     match, mget, order, paste, pmax, pmax.int, pmin, pmin.int,
+    ##     Position, rank, rbind, Reduce, rownames, sapply, saveRDS, setdiff,
+    ##     table, tapply, union, unique, unsplit, which.max, which.min
+
+    ## 
+    ## Attaching package: 'S4Vectors'
+
+    ## The following object is masked from 'package:utils':
+    ## 
+    ##     findMatches
+
+    ## The following objects are masked from 'package:base':
+    ## 
+    ##     expand.grid, I, unname
+
+    ## Loading required package: IRanges
+
+    ## Loading required package: GenomicRanges
+
+    ## Loading required package: GenomeInfoDb
+
+    ## Loading required package: SummarizedExperiment
+
+    ## Loading required package: MatrixGenerics
+
+    ## Loading required package: matrixStats
+
+    ## 
+    ## Attaching package: 'MatrixGenerics'
+
+    ## The following objects are masked from 'package:matrixStats':
+    ## 
+    ##     colAlls, colAnyNAs, colAnys, colAvgsPerRowSet, colCollapse,
+    ##     colCounts, colCummaxs, colCummins, colCumprods, colCumsums,
+    ##     colDiffs, colIQRDiffs, colIQRs, colLogSumExps, colMadDiffs,
+    ##     colMads, colMaxs, colMeans2, colMedians, colMins, colOrderStats,
+    ##     colProds, colQuantiles, colRanges, colRanks, colSdDiffs, colSds,
+    ##     colSums2, colTabulates, colVarDiffs, colVars, colWeightedMads,
+    ##     colWeightedMeans, colWeightedMedians, colWeightedSds,
+    ##     colWeightedVars, rowAlls, rowAnyNAs, rowAnys, rowAvgsPerColSet,
+    ##     rowCollapse, rowCounts, rowCummaxs, rowCummins, rowCumprods,
+    ##     rowCumsums, rowDiffs, rowIQRDiffs, rowIQRs, rowLogSumExps,
+    ##     rowMadDiffs, rowMads, rowMaxs, rowMeans2, rowMedians, rowMins,
+    ##     rowOrderStats, rowProds, rowQuantiles, rowRanges, rowRanks,
+    ##     rowSdDiffs, rowSds, rowSums2, rowTabulates, rowVarDiffs, rowVars,
+    ##     rowWeightedMads, rowWeightedMeans, rowWeightedMedians,
+    ##     rowWeightedSds, rowWeightedVars
+
+    ## Loading required package: Biobase
+
+    ## Welcome to Bioconductor
+    ## 
+    ##     Vignettes contain introductory material; view with
+    ##     'browseVignettes()'. To cite Bioconductor, see
+    ##     'citation("Biobase")', and for packages 'citation("pkgname")'.
+
+    ## 
+    ## Attaching package: 'Biobase'
+
+    ## The following object is masked from 'package:MatrixGenerics':
+    ## 
+    ##     rowMedians
+
+    ## The following objects are masked from 'package:matrixStats':
+    ## 
+    ##     anyMissing, rowMedians
+
+``` r
 library(ggplot2)
 library(pheatmap)
 library(ggrepel)
@@ -368,24 +472,53 @@ if (length(zero_samps)) {
   message("Removing samples with zero counts: ", paste(zero_samps, collapse = ", "))
   dds <- dds[, libs > 0]
 }
+```
 
+    ## Removing samples with zero counts: SRR12170055, SRR12170061
+
+``` r
 # 8. (Optional) Filter genes expressed in fewer than 2 samples
 keep_genes <- rowSums(counts(dds) > 0) >= 2
 dds <- dds[keep_genes, ]
 
 # 9. Inspect levels and result names
 message("Group levels: ", paste(levels(dds$group), collapse = ", "))
-message("Results names: ", paste(resultsNames(dds), collapse = ", "))
+```
 
+    ## Group levels: Wild_WT, Evolved_Mid, Evolved_Endpoint
+
+``` r
+message("Results names: ", paste(resultsNames(dds), collapse = ", "))
+```
+
+    ## Results names:
+
+``` r
 # 10. Run DESeq with poscounts size-factor estimation in parallel
 register(MulticoreParam(4))
 dds$group <- relevel(dds$group, ref = "Wild_WT")  # Set baseline
 dds <- DESeq(dds, sfType = "poscounts", parallel = TRUE)
-
-
 ```
 
-```{r}
+    ## estimating size factors
+
+    ## estimating dispersions
+
+    ## gene-wise dispersion estimates: 4 workers
+
+    ## mean-dispersion relationship
+
+    ## final dispersion estimates, fitting model and testing: 4 workers
+
+    ## -- replacing outliers and refitting for 3096 genes
+    ## -- DESeq argument 'minReplicatesForReplace' = 7 
+    ## -- original counts are preserved in counts(dds)
+
+    ## estimating dispersions
+
+    ## fitting model and testing
+
+``` r
 # Loop over both evolved groups
 for (grp in c("Evolved_Mid", "Evolved_Endpoint")) {
   
@@ -449,8 +582,26 @@ sig_res <- res_df[res_df$significant == TRUE, ]
 }
 ```
 
-The analysis compared gene expression between Evolved_Mid vs. Wild-Type
-and Evolved_Endpoint vs. Wild-Type E. coli strains. In the mid-evolution
+    ## Warning: ggrepel: 5 unlabeled data points (too many overlaps). Consider
+    ## increasing max.overlaps
+
+    ## Warning: ggrepel: 6 unlabeled data points (too many overlaps). Consider
+    ## increasing max.overlaps
+
+![](BMEG424_Final_files/figure-gfm/unnamed-chunk-3-1.png)<!-- -->
+
+    ## Warning: ggrepel: 10 unlabeled data points (too many overlaps). Consider
+    ## increasing max.overlaps
+
+![](BMEG424_Final_files/figure-gfm/unnamed-chunk-3-2.png)<!-- -->
+
+    ## Warning: ggrepel: 10 unlabeled data points (too many overlaps). Consider
+    ## increasing max.overlaps
+
+![](BMEG424_Final_files/figure-gfm/unnamed-chunk-3-3.png)<!-- -->![](BMEG424_Final_files/figure-gfm/unnamed-chunk-3-4.png)<!-- -->
+
+The analysis compared gene expression between Evolved_Mid vs. Wild-Type
+and Evolved_Endpoint vs. Wild-Type E. coli strains. In the mid-evolution
 stage, many genes showed different expression levels (padj \< 0.05,
 \|log₂ fold change\| ≥ 1), with many showing big changes over log₂ fold
 changes of 20. Three genes were notably increased: ECD_RS09395
@@ -474,10 +625,35 @@ expression. These ongoing changes across both stages show adaptive
 shifts in metabolism, stress responses, and regulatory networks, likely
 improving resource use and survival fitness.
 
-```{r}
+``` r
 # Load the tidyverse package (includes dplyr and stringr)
 library(tidyverse)
+```
 
+    ## ── Attaching core tidyverse packages ──────────────────────── tidyverse 2.0.0 ──
+    ## ✔ dplyr     1.1.4     ✔ readr     2.1.5
+    ## ✔ forcats   1.0.0     ✔ stringr   1.5.1
+    ## ✔ lubridate 1.9.4     ✔ tibble    3.2.1
+    ## ✔ purrr     1.0.4     ✔ tidyr     1.3.1
+    ## ── Conflicts ────────────────────────────────────────── tidyverse_conflicts() ──
+    ## ✖ lubridate::%within%() masks IRanges::%within%()
+    ## ✖ dplyr::collapse()     masks IRanges::collapse()
+    ## ✖ dplyr::combine()      masks Biobase::combine(), BiocGenerics::combine()
+    ## ✖ dplyr::count()        masks matrixStats::count()
+    ## ✖ dplyr::desc()         masks IRanges::desc()
+    ## ✖ tidyr::expand()       masks S4Vectors::expand()
+    ## ✖ dplyr::filter()       masks stats::filter()
+    ## ✖ dplyr::first()        masks S4Vectors::first()
+    ## ✖ dplyr::lag()          masks stats::lag()
+    ## ✖ ggplot2::Position()   masks BiocGenerics::Position(), base::Position()
+    ## ✖ purrr::reduce()       masks GenomicRanges::reduce(), IRanges::reduce()
+    ## ✖ dplyr::rename()       masks S4Vectors::rename()
+    ## ✖ lubridate::second()   masks S4Vectors::second()
+    ## ✖ lubridate::second<-() masks S4Vectors::second<-()
+    ## ✖ dplyr::slice()        masks IRanges::slice()
+    ## ℹ Use the conflicted package (<http://conflicted.r-lib.org/>) to force all conflicts to become errors
+
+``` r
 # 1. Read the accession file and create a pattern
 accessions <- read.csv("accessions.csv", stringsAsFactors = FALSE)
 # Collapse accession IDs into a single regex string separated by "|"
@@ -510,7 +686,7 @@ for(file in de_files) {
 The paper was interested in a specific set of genes that they knew
 mattered from previous evolution experiments or mutation analysis.
 
-```{r}
+``` r
 matched_end <- read.csv("Matched_DE_results_Evolved_Endpoint_vs_Wild_WT.csv")
 matched_mid <- read.csv("Matched_DE_results_Evolved_Mid_vs_Wild_WT.csv")
 
@@ -550,7 +726,7 @@ early adaptive redistribution of cellular resources.
 5)  Structural genes: mrdA exhibited modest upregulation, whereas mreB
     failed to reach the significance threshold
 
-These findings predominantly align with the paper's identified core
+These findings predominantly align with the paper’s identified core
 genes (pykF, zwf, spoT), suggesting rapid modification of central
 metabolism during early evolutionary stages. Observed variations in
 global regulator expression may be attributed to experimental condition
@@ -571,8 +747,8 @@ suggesting consolidated adaptive modifications.
 2)  mrdA: Sustained upregulation, supporting its function in cell wall
     synthesis modification
 
-3) relA: Demonstrated increased expression at endpoint, indicating
-further refinement of stringent response
+3)  relA: Demonstrated increased expression at endpoint, indicating
+    further refinement of stringent response
 
 4)  Global regulators: hns and fis exhibited more consistent expression
     changes
@@ -590,8 +766,9 @@ insignificant at midpoint achieved significance by endpoint, potentially
 resulting from sustained adaptive pressure or additional regulatory
 adjustments.
 
-## Comparison to Original Paper 
-##Common findings:
+## Comparison to Original Paper
+
+\##Common findings:
 
 Both analyses identify key metabolic and regulatory genes (pykF, zwf,
 spoT) as central to adaptation Upregulation of these genes in evolved
@@ -644,7 +821,7 @@ the paper so they were not able to be used previously.
 PRECISE-1K has 1035 samples, where PRECISE-278 only as 278. We hope this
 will be an improvement in this analysis.
 
-```{r}
+``` r
 library(tidyverse)
 library(pheatmap)
 
@@ -652,10 +829,9 @@ library(pheatmap)
 rld <- rlog(dds, blind = FALSE)
 expr <- assay(rld)  # genes x samples
 rownames(expr) <- sub("^gene-", "", rownames(expr))
-
 ```
 
-```{r}
+``` r
 # Load libraries
 library(DESeq2)
 library(pheatmap)
@@ -668,7 +844,7 @@ expr <- assay(rld)
 rownames(expr) <- sub("^gene-", "", rownames(expr))  # match M
 ```
 
-```{r}
+``` r
 sample_info <- read.csv("Col_Metadata.csv", row.names = 1)
 annotation_col <- data.frame(condition = sample_info$condition_type)
 rownames(annotation_col) <- rownames(sample_info)
@@ -701,11 +877,11 @@ pheatmap(A_subset,
          scale = "row",
          annotation_col = annotation_col,
          main = "Key iModulon Activities (Relevant Regulators)")
-
 ```
 
-```{r}
+![](BMEG424_Final_files/figure-gfm/unnamed-chunk-8-1.png)<!-- -->
 
+``` r
 sample_info <- read.csv("Metadata_with_CleanStrainType.csv", stringsAsFactors = FALSE)
 rownames(sample_info) <- sample_info$SRR  # Ensure SRA IDs are rownames
 
@@ -746,8 +922,20 @@ annotation_col <- data.frame(
 )
 rownames(annotation_col) <- rownames(sample_info)  # should be SRR IDs
 print("col names of A proj")
-print(colnames(A_projected))
+```
 
+    ## [1] "col names of A proj"
+
+``` r
+print(colnames(A_projected))
+```
+
+    ##  [1] "W3110"  "MG1655" "MG1655" "MG1655" "MG1655" "MG1655" "MG1655" "Crooks"
+    ##  [9] "Crooks" "W3110"  "W3110"  "W3110"  "W3110"  "W3110"  "W3110"  "W3110" 
+    ## [17] ""       "C"      "C"      "Crooks" "Crooks" "Crooks" "BL21"   "BL21"  
+    ## [25] "W3110"  "BL21"
+
+``` r
 annotation_col <- data.frame(condition = sample_info$condition_type)
 rownames(annotation_col) <- rownames(sample_info)
 
@@ -756,9 +944,9 @@ pheatmap(A_subset,
          #annotation_col = annotation_col,
          main = "Key iModulon Activities (Labeled by Strain Type)",
          show_colnames = TRUE)
-
-
 ```
+
+![](BMEG424_Final_files/figure-gfm/unnamed-chunk-9-1.png)<!-- -->
 
 # Results
 
@@ -769,8 +957,8 @@ strains. The rest of the strains showed fairly neutral results for
 Translation.
 
 The study also found that RpoS was down regulated for evolved samples
-and up regulated for WTs. We confirmed this finding for strains W3110 and
-MG1655.
+and up regulated for WTs. We confirmed this finding for strains W3110
+and MG1655.
 
 We also confirmed the trends for up regulation for WTs and down
 regulation for evolved for GadX. However we only found this in some
@@ -781,7 +969,7 @@ The study reported mixed findings for ppGpp which is also consistent
 with our results. There is a large range of down regulation at about -1
 for various strains with endpoint, midpoint evolved and WT.
 
-Our analysis partially confirms the papers "fear vs greed" tradeoff
+Our analysis partially confirms the papers “fear vs greed” tradeoff
 where evolved strains shift away from stress preparedness (RpoS, GadX),
 between growth and protein synthesis (translation) and ppGpp which
 mediates that balance.
@@ -797,7 +985,7 @@ evolved conditions, this helps to connect the transcriptional regulation
 to phenotypic outcomes. In our analysis, we reused the authors’ flux
 output and compared relative flux distributions across samples to
 identify shifts in energy production, carbon usage, and regulatory
-responses. Our approach mirrors the paper's methodology but adds
+responses. Our approach mirrors the paper’s methodology but adds
 automated processing and visualization for better reproducibility and
 easier integration with gene expression and iModulon activity data. We
 chose to use the provided data over regenerating an estimate due to the
@@ -808,13 +996,21 @@ We are setting up this analysis to correleate both flux and IModulons
 quantitatively, where the paper relied on using qualitative
 associations.
 
-```{r}
-
+``` r
 # FULL FLUX ANALYSIS PIPELINE
 
 library(tidyverse)
 library(jsonlite)
+```
 
+    ## 
+    ## Attaching package: 'jsonlite'
+
+    ## The following object is masked from 'package:purrr':
+    ## 
+    ##     flatten
+
+``` r
 ijo <- fromJSON("iJO1366.json")
 
 # Extract metabolite stoichiometry matrix
@@ -906,10 +1102,28 @@ metadata_unique <- metadata %>%
     Strain = sub("_.*", "", SampleKey),
     .groups = "drop"
   )
+```
 
+    ## Warning: Returning more (or less) than 1 row per `summarise()` group was deprecated in
+    ## dplyr 1.1.0.
+    ## ℹ Please use `reframe()` instead.
+    ## ℹ When switching from `summarise()` to `reframe()`, remember that `reframe()`
+    ##   always returns an ungrouped data frame and adjust accordingly.
+    ## Call `lifecycle::last_lifecycle_warnings()` to see where this warning was
+    ## generated.
+
+``` r
 # Merge metadata into flux data
 flux_long <- left_join(flux_long, metadata_unique, by = "SampleKey")
+```
 
+    ## Warning in left_join(flux_long, metadata_unique, by = "SampleKey"): Detected an unexpected many-to-many relationship between `x` and `y`.
+    ## ℹ Row 9 of `x` matches multiple rows in `y`.
+    ## ℹ Row 1 of `y` matches multiple rows in `x`.
+    ## ℹ If a many-to-many relationship is expected, set `relationship =
+    ##   "many-to-many"` to silence this warning.
+
+``` r
 flux_summary <- flux_long %>%
   filter(Stage %in% c("WT", "Mid", "Endpoint"), !is.na(ID)) %>%
   group_by(ID, Strain, Stage) %>%
@@ -927,7 +1141,13 @@ flux_summary_wide <- flux_summary %>%
 target_rxns <- c("ACONTa", "AKGDH", "CS", "FBA", "FUM", "GAPD", "ICDHyr", "MDH", "PDH", "PFK", "PGM", "PYK", "SUCOAS", "TPI")
 valid_rxns <- target_rxns[target_rxns %in% flux_summary_wide$ID]
 cat("\n Plotting reactions:\n", paste(valid_rxns, collapse = " "), "\n")
+```
 
+    ## 
+    ##  Plotting reactions:
+    ##  ACONTa AKGDH CS FBA FUM GAPD ICDHyr MDH PDH PFK PGM PYK SUCOAS TPI
+
+``` r
 plot_data <- flux_summary_wide %>%
   filter(ID %in% valid_rxns) %>%
   pivot_longer(cols = c(diff_Mid, diff_EP), names_to = "Comparison", values_to = "Flux_Diff") %>%
@@ -962,8 +1182,27 @@ for (i in seq_along(id_chunks)) {
 }
 
 for (p in plots) print(p)
-
 ```
+
+    ## Warning: Removed 15 rows containing missing values or values outside the scale range
+    ## (`geom_bar()`).
+
+![](BMEG424_Final_files/figure-gfm/unnamed-chunk-10-1.png)<!-- -->
+
+    ## Warning: Removed 20 rows containing missing values or values outside the scale range
+    ## (`geom_bar()`).
+
+![](BMEG424_Final_files/figure-gfm/unnamed-chunk-10-2.png)<!-- -->
+
+    ## Warning: Removed 15 rows containing missing values or values outside the scale range
+    ## (`geom_bar()`).
+
+![](BMEG424_Final_files/figure-gfm/unnamed-chunk-10-3.png)<!-- -->
+
+    ## Warning: Removed 20 rows containing missing values or values outside the scale range
+    ## (`geom_bar()`).
+
+![](BMEG424_Final_files/figure-gfm/unnamed-chunk-10-4.png)<!-- -->
 
 Each barplot shows the difference in flux between the two types of
 evolved strains: Midpoint and Endpoint and the wildtype strain for a set
@@ -1008,15 +1247,14 @@ indicate higher ATP and NADH production.
 
 The study concluded that despite the genetic diversity in the evolved
 populations, a convergent metabolic state emerged characterized by
-increased flux through glycolysis and decreased TCA activity (LaCroix et al., 2022).
+increased flux through glycolysis and decreased TCA activity (LaCroix et
+al., 2022).
 
 The behaviour analyzed in this section is consistent with the papers
 findings. Glycolysis reactions like GAPD, PFK, TPI, and PYK showed
 increased flux in evolved strains where TCA reactions like ICDHyr, PDH,
 and FUM show reduced or unchanged flux (most notably in Crooks and
 MG1655).
-
-
 
 # Conclusion
 
@@ -1036,7 +1274,9 @@ their convergent/divergent flux findings (e.g., NADPH‐balance shifts
 citeturn1file2). Likewise, we did not perform the iModulon ICA
 decomposition—our focus was on the RNA‑seq alignment and QC—so we could
 not independently validate their transcriptome‐wide regulatory
-trade‑offs or mutation–flux correlations. In addtion to this we were unable to attempt variant calling as the data for DNA-seq was unavailble.
+trade‑offs or mutation–flux correlations. In addtion to this we were
+unable to attempt variant calling as the data for DNA-seq was
+unavailble.
 
 Nevertheless, by automating and modernizing the read‑mapping and
 counting steps, we’ve improved reproducibility and transparency. Our
@@ -1049,38 +1289,38 @@ evolution.
 
 # References
 
-1) Badaczewska, A. (n.d.). *Downloading files from NCBI’s SRA database*.
-Bioinformatics
-Workbook. <https://bioinformaticsworkbook.org/dataAcquisition/fileTransfer/sra.html#gsc.tab=0>
+1)  Badaczewska, A. (n.d.). *Downloading files from NCBI’s SRA
+    database*. Bioinformatics
+    Workbook. <https://bioinformaticsworkbook.org/dataAcquisition/fileTransfer/sra.html#gsc.tab=0>
 
-2) Happy Belly Bioinformatics*.
-(n.d.). <https://astrobiomike.github.io/>
+2)  Happy Belly Bioinformatics\*.
+    (n.d.). <https://astrobiomike.github.io/>
 
-3) Higgs, M. (2024, March 8). *A guide to Multi-omics Integration
-Strategies - Front line Genomics*. Front Line
-Genomics. <https://frontlinegenomics.com/a-guide-to-multi-omics-integration-strategies/>
+3)  Higgs, M. (2024, March 8). *A guide to Multi-omics Integration
+    Strategies - Front line Genomics*. Front Line
+    Genomics. <https://frontlinegenomics.com/a-guide-to-multi-omics-integration-strategies/>
 
-4) How to interpret duplication from MultiQC/FastQC?* (n.d.).
-Bioinformatics Stack
-Exchange. <https://bioinformatics.stackexchange.com/questions/5274/how-to-interpret-duplication-from-multiqc-fastqc>
+4)  How to interpret duplication from MultiQC/FastQC?\* (n.d.).
+    Bioinformatics Stack
+    Exchange. <https://bioinformatics.stackexchange.com/questions/5274/how-to-interpret-duplication-from-multiqc-fastqc>
 
-5) IModulons \| Systems Biology Research Group*.
-(n.d.). <https://systemsbiology.ucsd.edu/imodulons>
+5)  IModulons \| Systems Biology Research Group\*.
+    (n.d.). <https://systemsbiology.ucsd.edu/imodulons>
 
-6) Kavvas, E. S., Long, C. P., Sastry, A., Poudel, S., Antoniewicz, M.
-R., Ding, Y., Mohamed, E. T., Szubin, R., Monk, J. M., Feist, A. M., &
-Palsson, B. O. (2022). Experimental evolution reveals unifying
-Systems-Level adaptations but diversity in driving
-genotypes. *mSystems*, *7*(6). <https://doi.org/10.1128/msystems.00165-22>
+6)  Kavvas, E. S., Long, C. P., Sastry, A., Poudel, S., Antoniewicz, M.
+    R., Ding, Y., Mohamed, E. T., Szubin, R., Monk, J. M., Feist, A. M.,
+    & Palsson, B. O. (2022). Experimental evolution reveals unifying
+    Systems-Level adaptations but diversity in driving
+    genotypes. *mSystems*, *7*(6). <https://doi.org/10.1128/msystems.00165-22>
 
-7) Long, C. P., & Antoniewicz, M. R. (2019). High-resolution 13C
-metabolic flux analysis. *Nature Protocols*, *14*(10),
-2856–2877. <https://doi.org/10.1038/s41596-019-0204-0>
+7)  Long, C. P., & Antoniewicz, M. R. (2019). High-resolution 13C
+    metabolic flux analysis. *Nature Protocols*, *14*(10),
+    2856–2877. <https://doi.org/10.1038/s41596-019-0204-0>
 
-8) MultiQC. (n.d.). *GitHub - MultiQC/MultiQC: Aggregate results from
-bioinformatics analyses across many samples into a single
-report.* GitHub. <https://github.com/MultiQC/MultiQC>
+8)  MultiQC. (n.d.). *GitHub - MultiQC/MultiQC: Aggregate results from
+    bioinformatics analyses across many samples into a single
+    report.* GitHub. <https://github.com/MultiQC/MultiQC>
 
-9) Reasons for extremely low number of DESeq identified differentially
-expressed genes after RNAseq?* (n.d.). Bioinformatics Stack
-Exchange. <https://bioinformatics.stackexchange.com/questions/22563/reasons-for-extremely-low-number-of-deseq-identified-differentially-expressed-ge>
+9)  Reasons for extremely low number of DESeq identified differentially
+    expressed genes after RNAseq?\* (n.d.). Bioinformatics Stack
+    Exchange. <https://bioinformatics.stackexchange.com/questions/22563/reasons-for-extremely-low-number-of-deseq-identified-differentially-expressed-ge>
