@@ -249,21 +249,26 @@ sample_info <- read.csv("Col_Metadata.csv",
                         row.names = 1,
                         stringsAsFactors = TRUE)
 
-# 3. Match samples
+# 3. Create combined group factor
+sample_info$group <- paste(sample_info$condition, sample_info$condition_type, sep = "_")
+sample_info$group <- factor(sample_info$group,
+                            levels = c("Wild_WT", "Evolved_Mid", "Evolved_Endpoint"))
+
+# 4. Match samples
 if (!all(colnames(count_data) %in% rownames(sample_info))) {
   stop("Mismatch between count_data columns and sample_info row names!")
 }
 sample_info <- sample_info[colnames(count_data), , drop = FALSE]
 
-# 4. Build DESeqDataSet (design uses your metadata column ‘condition’)
+# 5. Build DESeqDataSet
 dds <- DESeqDataSetFromMatrix(countData = count_data,
                               colData   = sample_info,
-                              design    = ~ condition)
+                              design    = ~ group)
 
-# 5. Filter out genes with zero total counts
+# 6. Filter out genes with zero total counts
 dds <- dds[rowSums(counts(dds)) > 0, ]
 
-# 6. Remove samples with zero total counts (if any)
+# 7. Remove samples with zero total counts (if any)
 libs <- colSums(counts(dds))
 zero_samps <- names(libs[libs == 0])
 if (length(zero_samps)) {
@@ -271,27 +276,101 @@ if (length(zero_samps)) {
   dds <- dds[, libs > 0]
 }
 
-# 7. (Optional) Filter genes expressed in fewer than 2 samples
+# 8. (Optional) Filter genes expressed in fewer than 2 samples
 keep_genes <- rowSums(counts(dds) > 0) >= 2
 dds <- dds[keep_genes, ]
 
-# 8. Inspect levels and result names
-message("Condition levels: ", paste(levels(dds$condition), collapse = ", "))
+# 9. Inspect levels and result names
+message("Group levels: ", paste(levels(dds$group), collapse = ", "))
 message("Results names: ", paste(resultsNames(dds), collapse = ", "))
 
-# 9. Run DESeq with poscounts size‑factor estimation in parallel
+# 10. Run DESeq with poscounts size-factor estimation in parallel
 register(MulticoreParam(4))
-dds$condition <- relevel(dds$condition, ref = "Wild")  # Wild becomes baseline
+dds$group <- relevel(dds$group, ref = "Wild_WT")  # Set baseline
 dds <- DESeq(dds, sfType = "poscounts", parallel = TRUE)
 
+
 ```
+```{r}
+# Loop over both evolved groups
+for (grp in c("Evolved_Mid", "Evolved_Endpoint")) {
+  
+  # 1. Get DESeq2 results
+  res <- results(dds, contrast = c("group", grp, "Wild_WT"))
+  res_df <- as.data.frame(res)
+  res_df$gene <- rownames(res_df)
+  
+  # 2. Filter significant DEGs
+  sig_res <- subset(res_df, padj < 0.05)
+  
+  # 3. Handle padj edge cases and prep for volcano plot
+  res_df$padj[is.na(res_df$padj)] <- 1
+  min_nonzero <- min(res_df$padj[res_df$padj > 0])
+  res_df$padj[res_df$padj == 0] <- min_nonzero
+  res_df$negLog10Padj <- -log10(res_df$padj)
+  res_df$significant <- with(res_df, padj < 0.05 & abs(log2FoldChange) >= 1)
+  
+  # 4. Top 10 genes for labels
+  topLabels <- res_df[order(res_df$padj), ][1:10, ]
+  
+  # 5. Build volcano plot
+  p_volcano <- ggplot(res_df, aes(x = log2FoldChange, y = negLog10Padj)) +
+    geom_point(aes(color = significant), alpha = 0.6, size = 1.5) +
+    scale_color_manual(values = c("grey70", "red")) +
+    geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "blue") +
+    geom_vline(xintercept = c(-1, 1), linetype = "dashed", color = "blue") +
+    geom_text_repel(data = topLabels, aes(label = gene), size = 3, max.overlaps = 10) +
+    theme_minimal(base_size = 14) +
+    labs(title = paste("Volcano Plot:", grp, "vs Wild_WT"),
+         x = "Log2 Fold Change",
+         y = "-Log10 Adjusted P-value") +
+    theme(legend.position = "none")
+  
+  # 6. Save volcano plot
+  png(paste0("volcano_plot_", grp, ".png"), width = 8, height = 6, units = "in", res = 300)
+  print(p_volcano)
+  dev.off()
+  print(p_volcano)  # Show in session too
+  
+  # 7. Save results table
+  write.table(res_df,
+              file = paste0("DE_results_", grp, "_vs_Wild_WT.txt"),
+              sep = "\t", quote = FALSE, row.names = TRUE)
+  
+  # 8. Optional: Heatmap of top 20 genes
+  top20 <- head(order(res$padj), 20)
+  mat20 <- counts(dds, normalized = TRUE)[top20, ]
+  
+  annot <- sample_info[colnames(mat20), , drop = FALSE]
+  rownames(annot) <- iconv(rownames(annot), from = "", to = "ASCII//TRANSLIT")
+  annot[] <- lapply(annot, function(x) iconv(as.character(x), from = "", to = "ASCII//TRANSLIT"))
+  rownames(mat20) <- iconv(rownames(mat20), from = "", to = "ASCII//TRANSLIT")
+  
+  pheatmap(mat20,
+           scale = "row",
+           annotation_col = annot,
+           main = paste("Heatmap of Top 20 DE Genes:", grp),
+           show_rownames = TRUE,
+           show_colnames = TRUE)
+}
+
+```
+
 
 ```{r}
 #load("dds_final.RData")
 
 # 10. Extract results by name (as shown in resultsNames)
 #     Here DESeq2 gave "condition_Wild_vs_Evolved"
-res <- results(dds, name = "condition_Evolved_vs_Wild")
+#res <- results(dds, name = "condition_Evolved_vs_Wild")
+#res <- results(dds, contrast = c("group", "Evolved_Mid", "Wild_WT"))
+
+for (grp in c("Evolved_Mid", "Evolved_Endpoint")) {
+  res <- results(dds, contrast = c("group", grp, "Wild_WT"))
+  # Save or plot for each grp...
+}
+
+
 res_df <- as.data.frame(res)
 res_df$gene <- rownames(res_df)
 # 11. Filter for significant DEGs
@@ -318,7 +397,7 @@ p_volcano <- ggplot(res_df, aes(x = log2FoldChange, y = negLog10Padj)) +
   geom_vline(xintercept = c(-1, 1),      linetype = "dashed", color = "blue") +
   geom_text_repel(data = topLabels,
                   aes(label = gene),
-                  size = 3, max.overlaps = 50) +
+                  size = 3, max.overlaps = 10) +
   theme_minimal(base_size = 14) +
   labs(title = "Volcano Plot of Differential Expression",
        x     = "Log2 Fold Change",
@@ -359,6 +438,7 @@ write.table(res_df,
             row.names = TRUE)
 
 head(sig_res[order(sig_res$padj), ])
+
 
 
 ```
@@ -482,97 +562,235 @@ ggplot(A_long, aes(x = condition, y = activity)) +
 
 # Metabolic Flux Profiles in Wild-Type vs Evolved Strains
 
-To investigate how gene expression changes translate into functional cellular behavior, we analyzed the predicted metabolic fluxes from the original study’s fluxomics data. These fluxes estimate the activity of central metabolic reactions under wild-type and evolved conditions, this helps to connect the transcriptional regulation to phenotypic outcomes. The flux values were computed in the original study using a constraint-based modeling approach (genome-scale metabolic modeling with gene expression integration). In our analysis, we reused the authors’ flux output and compared relative flux distributions across samples to identify shifts in energy production, carbon usage, and regulatory responses. Our approach mirrors the paper's methodology but adds automated processing and visualization for better reproducibility and easier integration with gene expression and iModulon activity data. We are setting up this analysis to correleate both flux and IModulons quantitatively, where the paper relied on using qualitative associations.
+To investigate how gene expression changes translate into functional cellular behavior, we analyzed the predicted metabolic fluxes from the original study’s fluxomics data. The study applied Parsimonious Flux Balance Analysis using iJO136 model to estimate the fluxes. These fluxes estimate the activity of central metabolic reactions under wild-type and evolved conditions, this helps to connect the transcriptional regulation to phenotypic outcomes.  In our analysis, we reused the authors’ flux output and compared relative flux distributions across samples to identify shifts in energy production, carbon usage, and regulatory responses. Our approach mirrors the paper's methodology but adds automated processing and visualization for better reproducibility and easier integration with gene expression and iModulon activity data. We chose to use the provided data over regenerating an estimate due to the complications we had during our DeSeq analysis, allowing us to focus more time on replicating DeSeq. 
+
+We are setting up this analysis to correleate both flux and IModulons quantitatively, where the paper relied on using qualitative associations.
+
+
 
 ```{r}
+# ---------------------------
+# FULL FLUX ANALYSIS PIPELINE
+# ---------------------------
+
+# 1. Load libraries
 library(tidyverse)
+library(jsonlite)
 
+# 2. Load iJO1366 JSON model
+ijo <- fromJSON("iJO1366.json")
+
+# 3. Extract metabolite stoichiometry matrix
+met_df <- ijo$reactions$metabolites
+metabolite_names <- colnames(met_df)
+reaction_ids <- ijo$reactions$id
+
+# 4. Build metabolite ID to name lookup
+df_metab <- ijo$metabolites
+metabolite_lookup <- setNames(df_metab$name, rownames(df_metab))
+
+# 5. Convert row to equation using metabolite names
+build_equation_row <- function(row_vals) {
+  reactants <- which(row_vals < 0)
+  products  <- which(row_vals > 0)
+  if (length(reactants) == 0 && length(products) == 0) return("")
+
+  format_met <- function(i) {
+    coeff <- abs(row_vals[i])
+    name <- metabolite_lookup[metabolite_names[i]]
+    if (is.na(name)) name <- metabolite_names[i]
+    if (coeff == 1) return(name)
+    paste0(coeff, " ", name)
+  }
+
+  lhs <- paste(sapply(reactants, format_met), collapse = " + ")
+  rhs <- paste(sapply(products, format_met), collapse = " + ")
+  paste(lhs, "<=>", rhs)
+}
+
+# 6. Generate reaction mapping
+equations <- apply(met_df, 1, build_equation_row)
+reaction_map <- data.frame(
+  ID = reaction_ids,
+  reaction_clean = trimws(equations),
+  stringsAsFactors = FALSE
+)
+
+# 7. Load flux data from CSV
 file <- "msystems.00165-22-s0007.csv"
-
-# 1. Read the first two lines to get sample identifiers
 header1 <- readLines(file, n = 1)
 header2 <- readLines(file, n = 2)[2]
-
-# Drop the first two empty fields, leaving one entry per sample
 h1 <- strsplit(header1, ",")[[1]][-c(1,2)]
 h2 <- strsplit(header2, ",")[[1]][-c(1,2)]
-
-# Best-fit flux columns occur every 4th column, so pick indices 1,5,9,...
 bf_idx2 <- seq(1, length(h1), by = 4)
-
-# Build sample IDs as Strain_Stage
 sample_ids <- paste0(h1[bf_idx2], "_", h2[bf_idx2])
+sample_ids <- sample_ids[!sample_ids %in% c("Best Fits", "LB95", "UB95", "Err+", "Err-")]
 
-# 2. Read the “RELATIVE FLUXES” section, skipping lines 1–8 so line 9 is the header
-flux_raw <- read.csv(file,
-                     skip            = 8,
-                     header          = TRUE,
-                     check.names     = FALSE,
-                     stringsAsFactors = FALSE)
-
-# 3. Extract reaction names (from the "Flux" column) and the best-fit flux columns
+# 8. Read flux matrix
+flux_raw <- read.csv(file, skip = 8, header = TRUE, check.names = FALSE, stringsAsFactors = FALSE)
 reaction_names <- flux_raw$Flux
-bf_indices     <- seq(3, ncol(flux_raw), by = 4)
-flux_best      <- flux_raw[, bf_indices]
-
-# 4. Assign the parsed sample IDs
-if (length(sample_ids) != ncol(flux_best)) {
-  stop("Parsed sample_ids length does not match number of best-fit columns!")
-}
+bf_indices <- seq(3, ncol(flux_raw), by = 4)
+flux_best <- flux_raw[, bf_indices]
+flux_best <- flux_best[, 1:length(sample_ids)]
 colnames(flux_best) <- sample_ids
 
-# 5. Build a wide data frame and pivot to long format
+# 9. Long format and clean
 flux_long <- data.frame(reaction = reaction_names, flux_best, stringsAsFactors = FALSE) %>%
-  pivot_longer(-reaction, names_to = "SampleID", values_to = "flux") %>%
+  pivot_longer(-reaction, names_to = "SampleKey", values_to = "flux") %>%
   mutate(
-    flux    = as.numeric(flux),                           # convert to numeric
-    Strain  = sub("_.*$", "", SampleID),                  # text before first underscore
-    Stage   = if_else(grepl("_WT$", SampleID), "WT", "EP") # WT vs EP
+    flux = suppressWarnings(as.numeric(flux)),
+    reaction = trimws(reaction),
+    reaction_clean = gsub("\\s*\\(exch\\)\\s*$", "", reaction)
   )
 
-# 6. Inspect the reshaped data
-glimpse(flux_long)
-```
+# 10. Use manual mapping to assign IDs
+manual_map <- tibble::tribble(
+  ~reaction_clean, ~ID,
+  "ICit + NADP <=> AKG + CO2 + NADPH", "ICDHyr",
+  "AKG + NAD -> SucCoA + CO2 + NADH", "AKGDH",
+  "SucCoA + ADP + Pi <=> Suc + ATP", "SUCOAS",
+  "F6P + ATP -> FBP + ADP", "PFK",
+  "FBP <=> DHAP + GAP", "FBA",
+  "DHAP <=> GAP", "TPI",
+  "GAP + NAD + ADP + Pi <=> 3PG + ATP + NADH", "GAPD",
+  "3PG <=> PEP", "PGM",
+  "PEP + ADP <=> Pyr + ATP", "PYK",
+  "Pyr + NAD -> AcCoA + CO2 + NADH", "PDH",
+  "AcCoA + OAC -> Cit", "CS",
+  "Cit <=> ICit", "ACONTa",
+  "Fum <=> Mal", "FUM",
+  "Mal + NAD <=> OAC + NADH", "MDH"
+)
+flux_long <- left_join(flux_long, manual_map, by = "reaction_clean")
 
-```{r}
-library(ggplot2)
+# 11. Load metadata and simplify
+metadata <- read.csv("Metadata_with_SampleKey.csv")
+metadata_unique <- metadata %>%
+  group_by(SampleKey) %>%
+  summarise(
+    Stage = first(condition_type),
+    Strain = sub("_.*", "", SampleKey),
+    .groups = "drop"
+  )
 
-# Plot all reactions (optional, can be messy if there are too many)
-ggplot(flux_long, aes(x = Stage, y = flux)) +
-  geom_boxplot() +
-  facet_wrap(~reaction, scales = "free_y") +
-  theme_minimal() +
-  labs(title = "Flux Distributions for Each Reaction",
-       y = "Predicted Flux", x = "Stage")
+# 12. Merge metadata into flux data
+flux_long <- left_join(flux_long, metadata_unique, by = "SampleKey")
 
+# 13. Filter and compute differential flux
 flux_summary <- flux_long %>%
-  group_by(reaction, Stage) %>%
-  summarise(mean_flux = mean(flux, na.rm = TRUE), .groups = "drop") %>%
-  pivot_wider(names_from = Stage, values_from = mean_flux) %>%
-  mutate(diff = EP - WT) %>%
-  arrange(desc(abs(diff)))
+  filter(Stage %in% c("WT", "Mid", "Endpoint"), !is.na(ID)) %>%
+  group_by(ID, Strain, Stage) %>%
+  summarise(mean_flux = mean(flux, na.rm = TRUE), .groups = "drop")
 
-head(flux_summary, 10)  # Top 10 reactions with largest difference
 
-top_reactions <- flux_summary$reaction[1:6]  # adjust number as needed
 
-ggplot(filter(flux_long, reaction %in% top_reactions), aes(x = Stage, y = flux)) +
-  geom_boxplot() +
-  facet_wrap(~reaction, scales = "free_y") +
-  theme_minimal() +
-  labs(title = "Top Differential Flux Reactions",
-       y = "Flux", x = "Stage")
+
+# 🔍 Preview the summarized flux before difference calculation
+cat("\n📋 Preview of flux_summary (mean flux per reaction/strain/stage):\n")
+print(head(flux_summary, 10))
+
+cat("\n🧬 Unique reaction IDs in flux_summary:\n")
+print(unique(flux_summary$ID))
+
+cat("\n🧪 Unique strains in flux_summary:\n")
+print(unique(flux_summary$Strain))
+
+cat("\n🧬 Unique stages in flux_summary:\n")
+print(unique(flux_summary$Stage))
+
+
+
+
+
+
+
+# 14. Pivot wider and compute differences
+flux_summary_wide <- flux_summary %>%
+  pivot_wider(id_cols = c(ID, Strain), names_from = Stage, values_from = mean_flux) %>%
+  mutate(
+    diff_Mid = Mid - WT,
+    diff_EP = Endpoint - WT
+  )
+
+cat("\U0001F4C4 Column names in flux_summary_wide:\n")
+print(colnames(flux_summary_wide))
+
+# 15. Plotting selected reactions
+target_rxns <- c("ACONTa", "AKGDH", "CS", "FBA", "FUM", "GAPD", "ICDHyr", "MDH", "PDH", "PFK", "PGM", "PYK", "SUCOAS", "TPI")
+valid_rxns <- target_rxns[target_rxns %in% flux_summary_wide$ID]
+cat("\n✅ Plotting reactions:\n", paste(valid_rxns, collapse = " "), "\n")
+
+plot_data <- flux_summary_wide %>%
+  filter(ID %in% valid_rxns) %>%
+  pivot_longer(cols = c(diff_Mid, diff_EP), names_to = "Comparison", values_to = "Flux_Diff") %>%
+  mutate(Comparison = recode(Comparison, diff_Mid = "Mid - WT", diff_EP = "Endpoint - WT"))
+
+# Get unique reaction IDs
+unique_ids <- unique(plot_data$ID)
+
+# Split into 4 roughly equal chunks
+n_chunks <- 4
+id_chunks <- split(unique_ids, ceiling(seq_along(unique_ids) / (length(unique_ids) / n_chunks)))
+
+# Create a list to hold the plots
+plots <- list()
+
+# Loop through each chunk and create a plot
+for (i in seq_along(id_chunks)) {
+  plot_data_subset <- plot_data %>% filter(ID %in% id_chunks[[i]])
+
+  p <- ggplot(plot_data_subset, aes(x = Strain, y = Flux_Diff, fill = ID)) +
+    geom_bar(stat = "identity", position = "dodge") +
+    facet_grid(ID ~ Comparison, scales = "free_y") +
+    theme_minimal(base_size = 8) +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      panel.spacing.y = unit(1, "lines")
+    ) +
+    labs(
+      title = paste("Flux Change vs WT (Mid and Endpoint) — Part", i),
+      y = "Flux Difference",
+      x = "Strain"
+    )
+
+  # Save to list
+  plots[[i]] <- p
+}
+
+# Print all plots
+for (p in plots) print(p)
+
+
 
 ```
-Once you see the top flux changes, ask:
+Each barplot shows the difference in flux between the two types of evolved strains: Midpoint and Endpoint and the wildtype strain for a set of key reactions for four strains: BL21, C, Crooks, and MG1655. We encountered some issues when completing this analysis. Firstly there was a mismatch between the dlux data file from the paper and the iJO1366 model. The model provided reactions as structured stoichiometric matrices and associated IDs, we had to manually map the reactions to the IDs. 
+Secondly there was some missing data for either the evolved or wildtype fluxes, which resulted in NA values for flux differences for some strains across some IDs. 
+Thirdly, the samples provided has replicates for some strains, however the flux values given did not differentiate if it was the mean value between replicates or if it was exclusively from one replicate. 
 
-Do these reactions relate to energy production (glycolysis, TCA, oxidative phosphorylation)?
+The overall trends observed:
 
-Do they involve known regulators like Crp, Fnr, or ArcA?
+1. TCA Cycle Reactions
+ICDHyr and PDH were reduced in strain Crooks which is consistent with reduced TCA cycle activity, while ACONTa increased in some mid samples which could suggest TCA remodelling before stabilization
 
-Are they consistent with the iModulons or DEGs you've seen (once available)?
+2. Glycolysis Reactions
 
-This is where you’ll tie metabolic changes to gene expression and to the paper’s main conclusions.
+PFK, FBA, GAPD, and PGM showed increased flux in evolved strains (especially Crooks). This is consistent with enhanced glycolysis.
+
+3. Anaplerotic Reactions:
+
+MDH (malate dehydrogenase) and FUM (fumarase) had large differences in values across conditions.
+
+4. Pyruvate Pathway:
+
+PYK and TPI showed consistent increases in evolved strains. This could suggest increased glycolytic output toward pyruvate.
+
+5. Energy-Producing Reactions:
+
+SUCOAS and GAPD fluxes were upregulated in some strains, this could indicate higher ATP and NADH production.
+
+The study concluded that despite the genetic diversity in the evolved populations, a convergent metabolic state emerged characterized by increased flux through glycolysis and decreased TCA activity ()
+ 
+The behaviour analyzed in this section is consistent with the papers findings. Glycolysis reactions like GAPD, PFK, TPI, and PYK showed increased flux in evolved strains where TCA reactions like ICDHyr, PDH, and FUM show reduced or unchanged flux (most notably in Crooks and MG1655). 
 
 ## Integrated Multi-Omics Analysis
 # Linking Transcriptional Regulation to Metabolic Phenotypes
