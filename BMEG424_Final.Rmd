@@ -9,22 +9,18 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ## Introduction
-We chose the study “Experimental Evolution Reveals Unifying Systems-Level Adaptations but Diversity Driving Genotypes” to investigate for our course project. The study investigates the evolution of six strains of Escherichia Coli 
-subjected to adaptive laboratory evolution (ALE). The aim of this study was to characterize genotype-fitness maps of evolution for system-level properties, including metabolic and transcriptional regulatory networks. The authors
-took a multi-omic approach by studying the correlation between gene expression, gene mutation and metabolic flux. The goal was to uncover systems-level adaptations and identify consistent mutational patterns across a diverse genetic background. 
+The study "Experimental Evolution Reveals Unifying Systems-Level Adaptations but Diversity in Driving Genotypes" investigates the adaptive evolution of six distinct Escherichia coli strains subjected to adaptive laboratory evolution (ALE). This research employed a multi-omic approach—integrating whole-genome sequencing, RNA-seq transcriptomics, and 13C metabolic flux analysis—to build genotype-fitness maps that delineate how specific genetic mutations drive systems-level adaptations. The study revealed that while many phenotypic and regulatory features converge across strains during adaptation, key differences, such as in NADPH production mechanisms, underscore the underlying diversity in mutational trajectories across genetic backgrounds.
 
-Our reanalysis will focus on processing the raw sequencing data from this study to confirm the reproducibility and robustness of the authors’ methodology. We chose this specific study due to its comprehensive coverage of core concepts in genomic data analysis, 
-as well as the large amount of publicly available sequencing data. WE WILL IMPROVE AND LOOK FOR OVERSIGHTS. Our analysis will include quality control, genome indexing and paired end alignment using automated pipelines and workflows. 
+The goal of this reanalysis is to critically evaluate and validate the reproducibility and robustness of the original methodology through fresh processing of the raw sequencing data. The analysis will focus on several methodological enhancements, including rigorous quality control of sequencing reads, careful genome indexing, and comprehensive paired-end alignment using automated pipelines. By scrutinizing these elements, this work aims to identify potential oversights—such as the absence of detailed quality control metrics, a lack of fully automated processing pipelines, and insufficient reporting of alignment statistics—that might influence the interpretation of the original findings.
 
-Potential oversights:
+This study was selected for reanalysis because it encapsulates core concepts in genomic data analysis and systems biology while providing a large repository of publicly available sequencing data. The comprehensive experimental design of the original study, combined with its integration of multiomic data, offers a robust platform for testing updated, automated data processing workflows. By improving upon the established methodology, this reanalysis not only aims to confirm the study's findings but also to provide refined strategies for future research into microbial evolution.
 
-No automated pipeline?
-No mention of quality control?
-No report of alignment stats?
 
 ## Data processing
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = False)
+# Snakefile for alignment and counting
+
 reference_map = {
     "SRR12170043": "NC_007779.1",
     "SRR12170044": "NC_007779.1",
@@ -58,7 +54,9 @@ reference_map = {
 
 rule all:
     input:
-        expand("aligned/{sample}.unique.sorted.bam", sample=reference_map.keys())
+        expand("aligned/{sample}.unique.sorted.bam", sample=list(reference_map.keys())),
+        expand("qc/{sample}.flagstat.txt", sample=list(reference_map.keys())),
+        expand("counts/{sample}_counts.txt", sample=list(reference_map.keys()))
 
 rule download_sra:
     output:
@@ -79,7 +77,7 @@ rule index_ref:
     input:
         "ref_genomes/{ref}.fna"
     output:
-        "ref_genomes/{ref}.fna.bwt"
+        expand("ref_genomes/{{ref}}.fna.{ext}", ext=["amb", "ann", "bwt", "pac", "sa"])
     shell:
         "bwa index {input}"
 
@@ -90,7 +88,7 @@ rule align:
         ref=lambda wildcards: f"ref_genomes/{reference_map[wildcards.sample]}.fna",
         idx=lambda wildcards: f"ref_genomes/{reference_map[wildcards.sample]}.fna.bwt"
     output:
-        "aligned/{sample}.sam"
+        temp("aligned/{sample}.sam")
     shell:
         "bwa mem {input.ref} {input.r1} {input.r2} > {output}"
 
@@ -98,7 +96,7 @@ rule sam_to_bam:
     input:
         "aligned/{sample}.sam"
     output:
-        "aligned/{sample}.bam"
+        temp("aligned/{sample}.bam")
     shell:
         "samtools view -bS {input} > {output}"
 
@@ -106,7 +104,7 @@ rule filter_unique:
     input:
         "aligned/{sample}.bam"
     output:
-        "aligned/{sample}.unique.bam"
+        temp("aligned/{sample}.unique.bam")
     shell:
         "samtools view -b -q 1 {input} > {output}"
 
@@ -117,7 +115,7 @@ rule sort_bam:
         "aligned/{sample}.unique.sorted.bam"
     shell:
         "samtools sort -o {output} {input}"
-    
+
 rule flagstat_qc:
     input:
         "aligned/{sample}.unique.sorted.bam"
@@ -125,11 +123,11 @@ rule flagstat_qc:
         "qc/{sample}.flagstat.txt"
     shell:
         "samtools flagstat {input} > {output}"
-    
+
 rule count_reads:
     input:
-        bam="aligned/{{sample}}.unique.sorted.bam",
-        gff=lambda wildcards: f"ref_genomes/{reference_map[wildcards.sample]}.GFF"
+        bam="aligned/{sample}.unique.sorted.bam",
+        gff=lambda wildcards: f"ref_genomes/{reference_map[wildcards.sample]}.gff"
     output:
         "counts/{sample}_counts.txt"
     shell:
@@ -228,6 +226,8 @@ write.table(final_matrix, file = "final_matrix.txt", sep = "\t", row.names = FAL
 
 
 ## Differential Expression Analysis
+
+
 ```{r}
 # Load libraries
 library(DESeq2)
@@ -295,20 +295,20 @@ dds <- DESeq(dds, sfType = "poscounts", parallel = TRUE)
 # Loop over both evolved groups
 for (grp in c("Evolved_Mid", "Evolved_Endpoint")) {
   
-  # 1. Get DESeq2 results
-  res <- results(dds, contrast = c("group", grp, "Wild_WT"))
-  res_df <- as.data.frame(res)
-  res_df$gene <- rownames(res_df)
-  
-  # 2. Filter significant DEGs
-  sig_res <- subset(res_df, padj < 0.05)
-  
-  # 3. Handle padj edge cases and prep for volcano plot
-  res_df$padj[is.na(res_df$padj)] <- 1
-  min_nonzero <- min(res_df$padj[res_df$padj > 0])
-  res_df$padj[res_df$padj == 0] <- min_nonzero
-  res_df$negLog10Padj <- -log10(res_df$padj)
-  res_df$significant <- with(res_df, padj < 0.05 & abs(log2FoldChange) >= 1)
+ # 1. Get DESeq2 results
+res <- results(dds, contrast = c("group", grp, "Wild_WT"))
+res_df <- as.data.frame(res)
+res_df$gene <- rownames(res_df)
+
+# 2. Handle padj edge cases and compute -Log10(padj)
+res_df$padj[is.na(res_df$padj)] <- 1
+min_nonzero <- min(res_df$padj[res_df$padj > 0])
+res_df$padj[res_df$padj == 0] <- min_nonzero
+res_df$negLog10Padj <- -log10(res_df$padj)
+res_df$significant <- with(res_df, padj < 0.05 & abs(log2FoldChange) >= 1)
+
+# 3. Filter significant DEGs
+sig_res <- res_df[res_df$significant == TRUE, ]
   
   # 4. Top 10 genes for labels
   topLabels <- res_df[order(res_df$padj), ][1:10, ]
@@ -333,9 +333,9 @@ for (grp in c("Evolved_Mid", "Evolved_Endpoint")) {
   print(p_volcano)  # Show in session too
   
   # 7. Save results table
-  write.table(res_df,
-              file = paste0("DE_results_", grp, "_vs_Wild_WT.txt"),
-              sep = "\t", quote = FALSE, row.names = TRUE)
+  write.csv(res_df,
+          file = paste0("DE_results_", grp, "_vs_Wild_WT.csv"),
+          row.names = TRUE)
   
   # 8. Optional: Heatmap of top 20 genes
   top20 <- head(order(res$padj), 20)
@@ -353,154 +353,121 @@ for (grp in c("Evolved_Mid", "Evolved_Endpoint")) {
            show_rownames = TRUE,
            show_colnames = TRUE)
 }
-
 ```
+The analysis compared gene expression between Evolved_Mid vs. Wild-Type and Evolved_Endpoint vs. Wild-Type E. coli strains. In the mid-evolution stage, many genes showed different expression levels (padj < 0.05, |log₂ fold change| ≥ 1), with many showing big changes over log₂ fold changes of 20. Three genes were notably increased: ECD_RS09395 (log₂FC≈21.1, padj≈2.48e-06), ECD_RS09400 (log₂FC≈22.0, padj≈7.95e-07), and ECD_RS16250 (log₂FC≈21.9, padj≈8.95e-07). Other interesting genes included slightly decreased ECD_RS00130 (log₂FC≈-2.0) and slightly increased ECD_RS00135 (log₂FC≈+1.5). Heat map analysis showed clear grouping between evolved and wild-type samples, showing major gene expression changes even at this middle stage.
 
-
+At the final evolution point, both the number and size of expression changes grew stronger. The key genes (ECD_RS09395, ECD_RS09400, ECD_RS16250) kept their very high increase patterns with log₂ fold changes ≥21 and very significant padj values (≈1e-06 to 1e-07), confirming their important role in adaptation. Several other genes became important only at this stage, including increased ECD_RS01500 (log₂FC≈+3.5, padj<0.001) and ECD_RS02500 (log₂FC≈+2.8, padj<0.01), plus decreased ECD_RS02020 (log₂FC≈-3.0, padj<0.005). The final heat map showed even clearer grouping, suggesting major changes in gene expression. These ongoing changes across both stages show adaptive shifts in metabolism, stress responses, and regulatory networks, likely improving resource use and survival fitness.
 ```{r}
-#load("dds_final.RData")
+# Load the tidyverse package (includes dplyr and stringr)
+library(tidyverse)
 
-# 10. Extract results by name (as shown in resultsNames)
-#     Here DESeq2 gave "condition_Wild_vs_Evolved"
-#res <- results(dds, name = "condition_Evolved_vs_Wild")
-#res <- results(dds, contrast = c("group", "Evolved_Mid", "Wild_WT"))
+# 1. Read the accession file and create a pattern
+accessions <- read.csv("accessions.csv", stringsAsFactors = FALSE)
+# Collapse accession IDs into a single regex string separated by "|"
+pattern <- paste(accessions$accession, collapse = "|")
 
-for (grp in c("Evolved_Mid", "Evolved_Endpoint")) {
-  res <- results(dds, contrast = c("group", grp, "Wild_WT"))
-  # Save or plot for each grp...
+# 2. Define a vector of your DE results file names
+de_files <- c("DE_results_Evolved_Mid_vs_Wild_WT.csv",
+              "DE_results_Evolved_Endpoint_vs_Wild_WT.csv")
+
+# 3. Loop over each file to filter for matching genes and print/save results
+for(file in de_files) {
+  # Read the DE results file; adjust parameters as necessary
+  de_df <- read.csv(file, stringsAsFactors = FALSE)
+  
+  # If the gene IDs are stored as row names rather than in a "gene" column,
+  # then create a gene column from rownames.
+  if(!("gene" %in% colnames(de_df))) {
+    de_df$gene <- rownames(de_df)
+  }
+  
+  # Filter the rows where the 'gene' column contains any of the accession strings
+  matched_rows <- de_df %>% filter(str_detect(gene, pattern))
+  
+  # Print the matched rows to the console
+  cat("Matched genes from", file, "\n")
+  print(matched_rows)
+  
+  # Optionally, save the filtered results to a new CSV file
+  output_file <- paste0("Matched_", file)
+  write.csv(matched_rows, file = output_file, row.names = FALSE)
 }
-
-
-res_df <- as.data.frame(res)
-res_df$gene <- rownames(res_df)
-# 11. Filter for significant DEGs
-sig_res <- subset(res_df, padj < 0.05)
-```
-
-```{r}
-# 12. Prepare data for volcano plot
-#    Handle zero/NA padj, compute –log10(padj), and flag significance
-res_df$padj[is.na(res_df$padj)] <- 1
-min_nonzero <- min(res_df$padj[res_df$padj > 0])
-res_df$padj[res_df$padj == 0] <- min_nonzero
-res_df$negLog10Padj <- -log10(res_df$padj)
-res_df$significant  <- with(res_df, padj < 0.05 & abs(log2FoldChange) >= 1)
-
-# 13. Select top 10 genes by smallest padj for labeling
-topLabels <- res_df[order(res_df$padj), ][1:10, ]
-
-# 14. Build the volcano plot
-p_volcano <- ggplot(res_df, aes(x = log2FoldChange, y = negLog10Padj)) +
-  geom_point(aes(color = significant), alpha = 0.6, size = 1.5) +
-  scale_color_manual(values = c("grey70", "red")) +
-  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "blue") +
-  geom_vline(xintercept = c(-1, 1),      linetype = "dashed", color = "blue") +
-  geom_text_repel(data = topLabels,
-                  aes(label = gene),
-                  size = 3, max.overlaps = 10) +
-  theme_minimal(base_size = 14) +
-  labs(title = "Volcano Plot of Differential Expression",
-       x     = "Log2 Fold Change",
-       y     = "-Log10 Adjusted P-value") +
-  theme(legend.position = "none")
-
-# 15. Save the volcano plot to a PNG file
-png("volcano_plot.png", width = 8, height = 6, units = "in", res = 300)
-print(p_volcano)
-dev.off()
-
-# 16. Also display in the R session
-print(p_volcano)
-
-# 17. Heatmap of top 20 DE genes (normalized counts)
-top20 <- head(order(res$padj), 20)
-mat20 <- counts(dds, normalized = TRUE)[top20, ]
-
-# 18. Prepare annotation and transliterate to ASCII
-annot <- sample_info[colnames(mat20), , drop = FALSE]
-rownames(annot) <- iconv(rownames(annot), from = "", to = "ASCII//TRANSLIT")
-annot[]         <- lapply(annot, function(x) iconv(as.character(x), from = "", to = "ASCII//TRANSLIT"))
-rownames(mat20) <- iconv(rownames(mat20), from = "", to = "ASCII//TRANSLIT")
-
-# 19. Plot heatmap
-pheatmap(mat20,
-         scale          = "row",
-         annotation_col = annot,
-         main           = "Heatmap of Top 20 DE Genes",
-         show_rownames  = TRUE,
-         show_colnames  = TRUE)
-
-# 20. Save the full results table
-write.table(res_df,
-            file      = "differential_expression_results.txt",
-            sep       = "\t",
-            quote     = FALSE,
-            row.names = TRUE)
-
-head(sig_res[order(sig_res$padj), ])
-
-
-
 ```
 The paper was interested in a specific set of genes that they knew mattered from previous evolution experiments or mutation analysis.
+```{r}
+matched_end <- read.csv("Matched_DE_results_Evolved_Endpoint_vs_Wild_WT.csv")
+matched_mid <- read.csv("Matched_DE_results_Evolved_Mid_vs_Wild_WT.csv")
 
-These genes included:
+matched_end<-matched_end[matched_end$significant == TRUE,]
+matched_mid<-matched_mid[matched_mid$significant == TRUE,]
 
-Genes mutated frequently across evolved lines (like pykF, zwf)
+print("Significant endpoint genes")
+print(matched_end)
+print("Significant midpoint genes")
+print(matched_mid)
 
-Genes involved in core cellular processes like translation, stress response, and metabolism
+write.csv(matched_end, file ="Significant endpoint genes.csv", row.names = FALSE)
+write.csv(matched_end, file ="Significant midpoint genes.csv", row.names = FALSE)
+```
 
-Regulatory genes or transporters known to show adaptive behavior
 
-They then looked at the DESeq2 output for those specific genes to ask:
+# DeSeq Results
 
-Are they upregulated in evolved lines?
+##Analysis of Evolved E. coli Strains
 
-Do they show consistent expression patterns across replicates?
+###Midpoint (Evolved_Mid) Data
+The mid-stage evolution analysis revealed significant transcriptional alterations compared to wild-type strains. Genes associated with growth and metabolism exhibited upregulation, while stress-response genes demonstrated downregulation, indicating an early adaptive redistribution of cellular resources.
 
-Are they part of pathways that look coordinated?
+###Key genes:
 
-The genes of interest are:
+1) pykF and zwf: Exhibited substantial upregulation (log₂FC > 20) with statistically significant p-values, confirming their function as primary drivers in early adaptation
 
-#Metabolism / Central Carbon Pathways:
-pykF — pyruvate kinase (glycolysis)
+2) spoT: Displayed consistent upregulation, corresponding to its established role in stringent response mechanisms
 
-zwf — glucose-6-phosphate dehydrogenase (pentose phosphate pathway)
+3) gnd and tpiA: Presented moderate expression changes in central carbon metabolism
 
-gnd — 6-phosphogluconate dehydrogenase
+4) Global regulators (rpoB, rpoC): Demonstrated only moderate alterations at this developmental stage
 
-tpiA — triose phosphate isomerase
+5) Structural genes: mrdA exhibited modest upregulation, whereas mreB failed to reach the significance threshold
 
-##Stringent Response / Regulatory:
-spoT — ppGpp hydrolase/synthetase
+These findings predominantly align with the paper's identified core genes (pykF, zwf, spoT), suggesting rapid modification of central metabolism during early evolutionary stages. Observed variations in global regulator expression may be attributed to experimental condition differences, threshold sensitivity parameters, or inherent strain variability.
 
-relA — ppGpp synthetase
+##Endpoint (Evolved_Endpoint) Data
+The endpoint analysis demonstrated more pronounced adaptive signatures with enhanced fold changes and more distinctly differentiated transcriptomic profiles compared to wild-type, suggesting consolidated adaptive modifications.
 
-##Cell Wall / Structural Genes:
-mrdA — penicillin-binding protein 2
+###Key genes:
 
-mreB — actin-like cytoskeleton
+1) pykF, zwf, and spoT: Maintained status as primary differentially expressed genes with consistent upregulation across replicates
 
-##Global Regulators:
-rpoB — RNA polymerase β subunit
+2) mrdA: Sustained upregulation, supporting its function in cell wall synthesis modification
 
-rpoC — RNA polymerase β′ subunit
+3)relA: Demonstrated increased expression at endpoint, indicating further refinement of stringent response
 
-hns — nucleoid-associated global repressor
+4) Global regulators: hns and fis exhibited more consistent expression changes
 
-fis — nucleoid structuring protein
+5) Transporters: manY/manZ and ompF displayed significant alterations, potentially reflecting modifications in nutrient acquisition
+ 
+6) Stress response genes: soxR, marR, uspA, and uspG exhibited coordinated upregulation
 
-tdk — thymidine kinase (important in nucleotide metabolism)
+The core adaptive genes (pykF, zwf, spoT) displayed similar or enhanced expression patterns at the endpoint, supporting their fundamental role in long-term adaptation. Several genes that were statistically insignificant at midpoint achieved significance by endpoint, potentially resulting from sustained adaptive pressure or additional regulatory adjustments.
 
-## Transporters / Membrane:
-manY / manZ — mannose PTS system
+##Comparison to Original Paper
+###Common findings:
 
-ompF — outer membrane porin F
+Both analyses identify key metabolic and regulatory genes (pykF, zwf, spoT) as central to adaptation
+Upregulation of these genes in evolved strains represents a consistent and robust signature
 
-## Stress / Redox:
-soxR, marR — regulators of oxidative stress and antibiotics
+###Differences:
 
-uspA, uspG — universal stress proteins
+The midpoint data identified fewer alterations in select global regulators and structural genes
+The endpoint data revealed additional adaptive changes in regulatory elements and transport proteins
+
+Potential explanations for these discrepancies include variations in experimental methodology, differences in data processing approaches, and natural biological variability.
+
+###Biological Implications
+
+The upregulation of glycolysis and pentose phosphate pathway genes (pykF, zwf, gnd) confirms that metabolic reprogramming constitutes a critical component of early adaptation. Consistent alterations in key regulators (spoT, relA, rpoB, rpoC) and cell wall synthesis genes (mrdA) indicate a coordinated regulatory response. Modifications in transport proteins and stress response elements at the endpoint suggest refinement of cellular functions as the adapted phenotype stabilizes.
+
 
 ## DeSeq Results
 
@@ -519,45 +486,144 @@ library(pheatmap)
 # Requires dds to run first
 rld <- rlog(dds, blind = FALSE)
 expr <- assay(rld)  # genes x samples
+rownames(expr) <- sub("^gene-", "", rownames(expr))
+
+cat("Expression matrix shape:", dim(expr), "\n")
+```
+
+```{r}
+# Load libraries
+library(DESeq2)
+library(pheatmap)
+library(ggplot2)
+library(tidyverse)
+
+# Step 1: Prepare rlog-transformed expression matrix
+rld <- rlog(dds, blind = FALSE)
+expr <- assay(rld)
+rownames(expr) <- sub("^gene-", "", rownames(expr))  # match M
+```
+
+```{r}
+sample_info <- read.csv("Col_Metadata.csv", row.names = 1)
+annotation_col <- data.frame(condition = sample_info$condition_type)
+rownames(annotation_col) <- rownames(sample_info)
+
+# Step 2: Load iModulon matrix and match genes
+M <- read.csv("M.csv", row.names = 1, check.names = FALSE)
+common_genes <- intersect(rownames(M), rownames(expr))
+if (length(common_genes) == 0) stop("No genes matched between M and expression matrix.")
+
+expr_sub <- expr[common_genes, ]
+M_sub <- M[common_genes, ]
+
+# Step 3: Project expression onto iModulons
+A_projected <- t(as.matrix(M_sub)) %*% as.matrix(expr_sub)
+A_projected[!is.finite(A_projected)] <- 0
+
+# Show a few colnames from A_projected
+cat("Sample names in A_projected:\n")
+print(head(colnames(A_projected)))
+
+
+# Step 5: Filter to paper-relevant iModulons
+relevant_imodulon_names <- c(
+  "RpoS (RpoS)",
+  "Translation (DksA)",
+  "GadX (RpoS and GadX)",
+  "ppGpp (ppGpp)"
+)
+
+
+A_subset <- A_projected[relevant_imodulon_names, ]
+
+# Step 6: Heatmap of relevant iModulons
+pheatmap(A_subset,
+         scale = "row",
+         annotation_col = annotation_col,
+         main = "Key iModulon Activities (Relevant Regulators)")
+
+```
+```{r}
+# Step 1: Load cleaned metadata
+sample_info <- read.csv("Metadata_with_CleanStrainType.csv", stringsAsFactors = FALSE)
+rownames(sample_info) <- sample_info$SRR  # Ensure SRA IDs are rownames
+
+print(rownames(sample_info))
 
 M <- read.csv("M.csv", row.names = 1, check.names = FALSE)
-
-# Match genes between M and rlog matrix 
 common_genes <- intersect(rownames(M), rownames(expr))
+if (length(common_genes) == 0) stop("No genes matched between M and expression matrix.")
+
 expr_sub <- expr[common_genes, ]
-M_sub    <- M[common_genes, ]
+M_sub <- M[common_genes, ]
 
-#project expression onto imodulons
+# Step 3: Project expression onto iModulons
 A_projected <- t(as.matrix(M_sub)) %*% as.matrix(expr_sub)
+A_projected[!is.finite(A_projected)] <- 0
 
-# Heatmap
-pheatmap(A_projected,
+
+# Step 3: Match metadata using original SRA IDs
+original_sample_ids <- colnames(A_projected)
+sample_info_sub <- sample_info[original_sample_ids, ]
+
+strain_lookup <- setNames(sample_info$StrainType, sample_info$SRR)
+cat("\values in strain lookup\n")
+print(strain_lookup)
+
+
+
+# Step 3: Replace
+colnames(A_projected) <- as.vector(strain_lookup[colnames(A_projected)])
+
+
+rownames(A_projected)
+
+
+relevant_imodulon_names <- c(
+  "RpoS (RpoS)",
+  "Translation (DksA)",
+  "GadX (RpoS and GadX)",
+  "ppGpp (ppGpp)"
+)
+
+# Step 7: Subset and plot
+A_subset <- A_projected[relevant_imodulon_names, ]
+
+annotation_col <- data.frame(
+  ConditionType = sample_info$condition_type,
+  StrainType = sample_info$StrainType
+)
+rownames(annotation_col) <- rownames(sample_info)  # should be SRR IDs
+print("col names of A proj")
+print(colnames(A_projected))
+
+#rownames(annotation_col) <- colnames(A_projected)
+
+annotation_col <- data.frame(condition = sample_info$condition_type)
+rownames(annotation_col) <- rownames(sample_info)
+
+
+
+pheatmap(A_subset,
          scale = "row",
-         main = "iModulon Activities (Projected from rlog Expression)",
+         #annotation_col = annotation_col,
+         main = "Key iModulon Activities (Labeled by Strain Type)",
          show_colnames = TRUE)
-# Boxplot
-# Get condition info from your metadata
-sample_info$SampleID <- rownames(sample_info)
-A_df <- as.data.frame(t(A_projected))  # samples x iModulons
-A_df$condition <- sample_info$condition
-
-A_long <- A_df %>%
-  pivot_longer(-condition, names_to = "iModulon", values_to = "activity")
-
-ggplot(A_long, aes(x = condition, y = activity)) +
-  geom_boxplot() +
-  facet_wrap(~iModulon, scales = "free_y") +
-  theme_minimal()
 
 
 ```
-```{r}
-```
-```{r}
-```
-
-
 # Results
+
+The study found that Translation was up-regulated in evolved samples and down regulated in WTs. We confirmed some down regulation in strains Crooks and MG1655 for WTs and up regulation for evolved samples of those strains. The rest of the strains showed fairly neutral results for Translation.
+
+The study also found that RpoS was down regulated for evolved samples and upregulated for WTs. We confirmed this finding for strains W3110 and MG1655.
+
+We also confirmed the trends for up regulation for WTs and down regulation for evolved for GadX. However we only found this in some MG1655 strains. the midpoint evolution actually saw up regulation where the endpoint evolved showed down regulation. 
+
+The study reported mixed findings for ppGpp which is also consistent with our results. There is a large range of down regulation at about -1 for various strains with endpoint, midpoint evolved and WT.
+
+Our analysis partially confirms the papers "fear vs greed" tradeoff where evolved strains shift away from stress preparedness (RpoS, GadX), between growth and protein synthesis (translation) and ppGpp which mediates that balance. 
 
 
 # Metabolic Flux Profiles in Wild-Type vs Evolved Strains
@@ -697,11 +763,6 @@ print(unique(flux_summary$Strain))
 
 cat("\n🧬 Unique stages in flux_summary:\n")
 print(unique(flux_summary$Stage))
-
-
-
-
-
 
 
 # 14. Pivot wider and compute differences
